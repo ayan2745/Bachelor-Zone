@@ -53,6 +53,14 @@
 <!-- MAIN APP -->
 <div id="appContainer" class="hidden max-w-md mx-auto bg-white min-h-screen shadow-lg pb-24 relative flex flex-col">
 
+    <!-- FLOATING NOTIFICATION BELL — fixed to viewport, aligned to the app's card width so it stays put on scroll -->
+    <div class="fixed top-0 left-0 right-0 max-w-md mx-auto z-40 pointer-events-none" style="height:0;">
+        <button id="notifBellBtn" onclick="openNotificationPanel()" class="hidden pointer-events-auto absolute top-4 right-4 w-12 h-12 rounded-full bg-white shadow-lg ring-1 ring-black/5 flex items-center justify-center text-xl active:scale-95 transition" title="Notifications">
+            🔔
+            <span id="notifBadge" class="hidden absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-black rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center leading-none border-2 border-white">0</span>
+        </button>
+    </div>
+
     <!-- HEADER -->
     <div id="appHeader" class="bg-gradient-to-br from-slate-800 to-indigo-900 text-white p-6 rounded-b-3xl shadow-md">
         <div class="flex justify-between items-center mb-4">
@@ -61,10 +69,6 @@
                 <h3 id="userNameDisplay" class="text-xl font-bold">-</h3>
             </div>
             <select id="monthFilterSelect" onchange="refreshDataHub()" class="bg-white text-gray-800 text-xs font-bold px-2 py-1 rounded-md border focus:outline-none"></select>
-            <button id="notifBellBtn" onclick="openNotificationPanel()" class="hidden relative text-sm bg-white/20 hover:bg-white/30 w-8 h-8 rounded-full transition flex items-center justify-center" title="Notifications">
-                🔔
-                <span id="notifBadge" class="hidden absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] font-black rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center leading-none">0</span>
-            </button>
             <button onclick="logout()" class="text-xs bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-full transition">Logout</button>
         </div>
         <div class="grid grid-cols-3 gap-2 bg-black/20 p-3 rounded-xl text-center text-xs">
