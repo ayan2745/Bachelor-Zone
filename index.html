@@ -53,10 +53,10 @@
 <!-- MAIN APP -->
 <div id="appContainer" class="hidden max-w-md mx-auto bg-white min-h-screen shadow-lg pb-24 relative flex flex-col">
 
-    <!-- FLOATING NOTIFICATION BELL — fixed to viewport, aligned to the app's card width so it stays put on scroll -->
-    <div class="fixed top-0 left-0 right-0 max-w-md mx-auto z-40 pointer-events-none" style="height:0;">
-        <button id="notifBellBtn" onclick="openNotificationPanel()" class="hidden pointer-events-auto absolute top-4 right-4 w-12 h-12 rounded-full bg-white shadow-lg ring-1 ring-black/5 flex items-center justify-center text-xl active:scale-95 transition" title="Notifications">
-            🔔
+    <!-- FLOATING NOTIFICATION BELL — fixed to viewport, aligned to the app's card width, draggable and auto-fading -->
+    <div id="notifBellWrap" class="fixed top-0 left-0 right-0 max-w-md mx-auto z-40 pointer-events-none" style="height:0;">
+        <button id="notifBellBtn" class="hidden pointer-events-auto absolute w-12 h-12 rounded-full bg-white shadow-lg ring-1 ring-black/5 flex items-center justify-center text-xl select-none" style="top:16px; right:16px; touch-action:none; opacity:1; transition:opacity .25s ease, transform .1s ease;" title="Notifications — drag to move">
+            ✉
             <span id="notifBadge" class="hidden absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-black rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center leading-none border-2 border-white">0</span>
         </button>
     </div>
@@ -593,7 +593,7 @@
 <div id="notifPanelOverlay" class="modal-overlay hidden" style="z-index:250;">
     <div class="modal-box space-y-3">
         <div class="flex justify-between items-center mb-1">
-            <h3 class="font-black text-slate-800 text-sm">🔔 Notifications</h3>
+            <h3 class="font-black text-slate-800 text-sm">📌 Updates</h3>
             <button onclick="closeNotificationPanel()" class="text-gray-400 hover:text-gray-700 text-xl leading-none">&times;</button>
         </div>
 
@@ -1011,10 +1011,125 @@ function renderBazarDateSection() {
     });
 }
 
+// ── Draggable / auto-fading notification bell ───────────────────────
+function initDraggableNotifBell() {
+    const bell = document.getElementById('notifBellBtn');
+    const wrap = document.getElementById('notifBellWrap');
+    if (!bell || !wrap || bell.dataset.dragInit) return;
+    bell.dataset.dragInit = '1';
+
+    const FADE_OPACITY = 0.35;
+    const INACTIVITY_MS = 3000;
+    const MOVE_THRESHOLD = 5; // px — beyond this, a press counts as a drag, not a tap
+    const STORAGE_KEY = 'bz_notifBellPos';
+
+    let fadeTimer = null;
+    let dragging = false;
+    let moved = false;
+    let startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+    function clamp(val, min, max) { return Math.min(Math.max(val, min), max); }
+
+    function applyPosition(left, top) {
+        const wrapRect = wrap.getBoundingClientRect();
+        const maxLeft = Math.max(0, wrapRect.width - bell.offsetWidth);
+        const maxTop = Math.max(0, window.innerHeight - bell.offsetHeight);
+        left = clamp(left, 0, maxLeft);
+        top = clamp(top, 0, maxTop);
+        bell.style.left = left + 'px';
+        bell.style.top = top + 'px';
+        bell.style.right = 'auto';
+    }
+
+    function savePosition() {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                left: parseFloat(bell.style.left) || 0,
+                top: parseFloat(bell.style.top) || 0
+            }));
+        } catch (e) {}
+    }
+
+    function loadSavedPosition() {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) return false;
+            const pos = JSON.parse(raw);
+            if (typeof pos.left === 'number' && typeof pos.top === 'number') {
+                applyPosition(pos.left, pos.top);
+                return true;
+            }
+        } catch (e) {}
+        return false;
+    }
+
+    function wakeUp() {
+        bell.style.opacity = '1';
+        clearTimeout(fadeTimer);
+        fadeTimer = setTimeout(() => {
+            if (!dragging) bell.style.opacity = String(FADE_OPACITY);
+        }, INACTIVITY_MS);
+    }
+
+    // Establish an initial left/top (in px) from wherever the button currently sits,
+    // then restore any previously-saved position.
+    const wrapRect = wrap.getBoundingClientRect();
+    const bellRect = bell.getBoundingClientRect();
+    applyPosition(bellRect.left - wrapRect.left, bellRect.top - wrapRect.top);
+    loadSavedPosition();
+
+    function onPointerDown(e) {
+        dragging = true;
+        moved = false;
+        try { bell.setPointerCapture(e.pointerId); } catch (err) {}
+        startX = e.clientX;
+        startY = e.clientY;
+        startLeft = parseFloat(bell.style.left) || 0;
+        startTop = parseFloat(bell.style.top) || 0;
+        bell.style.transition = 'none';
+        wakeUp();
+    }
+
+    function onPointerMove(e) {
+        if (!dragging) return;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        if (Math.abs(dx) > MOVE_THRESHOLD || Math.abs(dy) > MOVE_THRESHOLD) moved = true;
+        if (moved) applyPosition(startLeft + dx, startTop + dy);
+    }
+
+    function onPointerUp(e) {
+        if (!dragging) return;
+        dragging = false;
+        bell.style.transition = 'opacity .25s ease, transform .1s ease';
+        try { bell.releasePointerCapture(e.pointerId); } catch (err) {}
+        if (moved) {
+            savePosition();
+            wakeUp();
+        } else {
+            // A tap (no real movement): reveal at full opacity and open the panel.
+            wakeUp();
+            openNotificationPanel();
+        }
+    }
+
+    bell.addEventListener('pointerdown', onPointerDown);
+    bell.addEventListener('pointermove', onPointerMove);
+    bell.addEventListener('pointerup', onPointerUp);
+    bell.addEventListener('pointercancel', onPointerUp);
+
+    window.addEventListener('resize', () => {
+        applyPosition(parseFloat(bell.style.left) || 0, parseFloat(bell.style.top) || 0);
+    });
+
+    wakeUp();
+}
+
 // ── Auth ───────────────────────────────────────────────────────────
 window.onload = function() {
     document.getElementById('currentDateDisplay').innerText = getTodayDateString();
     document.getElementById('admMealDate').value = getTodayDateString();
+    initDraggableNotifBell();
 
     const forceLogin = sessionStorage.getItem('forceLogin');
     if (forceLogin) {
