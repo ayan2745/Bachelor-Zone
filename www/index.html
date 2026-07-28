@@ -61,6 +61,10 @@
                 <h3 id="userNameDisplay" class="text-xl font-bold">-</h3>
             </div>
             <select id="monthFilterSelect" onchange="refreshDataHub()" class="bg-white text-gray-800 text-xs font-bold px-2 py-1 rounded-md border focus:outline-none"></select>
+            <button id="notifBellBtn" onclick="openNotificationPanel()" class="hidden relative text-sm bg-white/20 hover:bg-white/30 w-8 h-8 rounded-full transition flex items-center justify-center" title="Notifications">
+                🔔
+                <span id="notifBadge" class="hidden absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] font-black rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center leading-none">0</span>
+            </button>
             <button onclick="logout()" class="text-xs bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-full transition">Logout</button>
         </div>
         <div class="grid grid-cols-3 gap-2 bg-black/20 p-3 rounded-xl text-center text-xs">
@@ -581,6 +585,34 @@
     </div>
 </div>
 
+<!-- NOTIFICATIONS PANEL -->
+<div id="notifPanelOverlay" class="modal-overlay hidden" style="z-index:250;">
+    <div class="modal-box space-y-3">
+        <div class="flex justify-between items-center mb-1">
+            <h3 class="font-black text-slate-800 text-sm">🔔 Notifications</h3>
+            <button onclick="closeNotificationPanel()" class="text-gray-400 hover:text-gray-700 text-xl leading-none">&times;</button>
+        </div>
+
+        <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-3 space-y-2">
+            <input type="hidden" id="notifEditingId" value="">
+            <input id="notifComposeTitle" type="text" maxlength="140" placeholder="Title" class="w-full border border-indigo-200 rounded-lg p-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400">
+            <textarea id="notifComposeMessage" maxlength="1000" rows="2" placeholder="Write a notification for everyone..." class="w-full border border-indigo-200 rounded-lg p-2 text-xs bg-white resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea>
+            <div class="flex justify-between items-center gap-2">
+                <span id="notifEditingHint" class="hidden text-[10px] font-bold text-amber-600">Editing your notification — <a href="#" onclick="cancelNotifEdit();return false;" class="underline">cancel</a></span>
+                <span class="flex-1"></span>
+                <button onclick="sendNotificationSubmit()" id="notifSendBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-1.5 rounded-lg disabled:bg-gray-400">Send</button>
+            </div>
+        </div>
+
+        <div class="flex justify-between items-center">
+            <span class="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Last 3 days</span>
+            <button onclick="markAllNotificationsReadClick()" class="text-[10px] font-bold text-indigo-600 hover:underline">Mark all read</button>
+        </div>
+
+        <div id="notifListContainer" class="space-y-2 max-h-[50vh] overflow-y-auto"></div>
+    </div>
+</div>
+
 <script>
 // ═══════════════════════════════════════════════════════════════════
 const API_URL = "https://bachelor-api.vercel.app/api";
@@ -606,6 +638,10 @@ let adjSavePending       = false;
 let serverTodayDate      = null;
 let serverCurrentHour    = null;
 let isGuestMode          = false;
+let globalNotifications  = [];
+let notifUnreadCount     = 0;
+let notifPollTimer       = null;
+let notifPanelOpen       = false;
 
 // Roster modal state
 let rosterDraft = [];  // [{ email, name, rentAmount }]
@@ -899,7 +935,7 @@ function renderBazarMealPlanner(plan) {
     const today = plan.today || {};
     const isKhalaView = isBuaUser() && !plan.canManage;
     const text = isKhalaView
-        ? { title:'আজকের মেনু', lunch:'দুপুর', dinner:'রাত', empty:'নির্ধারিত নয়', role:'খালার মেনু' }
+        ? { title:'আজকের মেন্যু', lunch:'দুপুর', dinner:'রাত', empty:'নির্ধারিত নয়', role:'বাজার' }
         : { title:"Today's Meal", lunch:'Lunch', dinner:'Dinner', empty:'Not set', role:'Bazar member' };
     document.getElementById('bazarMealTitle').textContent = text.title;
     todayBox.innerHTML = `
@@ -1104,10 +1140,11 @@ function launchApp() {
         }
         checkLockoutRestrictions();
         refreshDataHub();
+        startNotificationPolling();
     });
 }
 
-function logout() { localStorage.removeItem('messUser'); location.reload(); }
+function logout() { stopNotificationPolling(); localStorage.removeItem('messUser'); location.reload(); }
 
 function switchTab(tabId, btn) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -1959,6 +1996,157 @@ async function submitBazar() {
         refreshDataHub();
     } catch(e) { alert("Error: " + e.message); }
     finally { btn.disabled = false; btn.textContent = "Submit"; }
+}
+
+// ── Notifications ─────────────────────────────────────────────────
+function notificationsEnabledForUser() {
+    return Boolean(currentUser && currentUser.email) && !isGuestMode && !isBuaUser();
+}
+function timeAgo(iso) {
+    if (!iso) return '';
+    const then = new Date(iso).getTime();
+    if (Number.isNaN(then)) return '';
+    const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+    if (diffSec < 60) return 'just now';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDay = Math.floor(diffHr / 24);
+    return `${diffDay}d ago`;
+}
+function updateNotifBadgeUI() {
+    const badge = document.getElementById('notifBadge');
+    const bell  = document.getElementById('notifBellBtn');
+    if (!badge || !bell) return;
+    if (!notificationsEnabledForUser()) { bell.classList.add('hidden'); return; }
+    bell.classList.remove('hidden');
+    if (notifUnreadCount > 0) {
+        badge.textContent = notifUnreadCount > 9 ? '9+' : String(notifUnreadCount);
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
+}
+async function loadNotificationBadge() {
+    if (!notificationsEnabledForUser()) { updateNotifBadgeUI(); return; }
+    try {
+        const r = await apiGet({ action:'getNotifications', email: currentUser.email });
+        if (!r.success) return;
+        globalNotifications = r.notifications || [];
+        notifUnreadCount = r.unreadCount || 0;
+        updateNotifBadgeUI();
+        if (notifPanelOpen) renderNotificationList();
+    } catch (e) { /* silent — badge just won't update this cycle */ }
+}
+function startNotificationPolling() {
+    if (notifPollTimer) return;
+    if (!notificationsEnabledForUser()) return;
+    loadNotificationBadge();
+    notifPollTimer = setInterval(loadNotificationBadge, 60000);
+}
+function stopNotificationPolling() {
+    if (notifPollTimer) { clearInterval(notifPollTimer); notifPollTimer = null; }
+}
+function openNotificationPanel() {
+    if (!notificationsEnabledForUser()) return;
+    notifPanelOpen = true;
+    document.getElementById('notifPanelOverlay').classList.remove('hidden');
+    loadNotificationBadge();
+}
+function closeNotificationPanel() {
+    notifPanelOpen = false;
+    document.getElementById('notifPanelOverlay').classList.add('hidden');
+    cancelNotifEdit();
+}
+function renderNotificationList() {
+    const container = document.getElementById('notifListContainer');
+    if (!container) return;
+    if (!globalNotifications.length) {
+        container.innerHTML = '<p class="text-center text-gray-400 text-xs italic py-6">No notifications in the last 3 days.</p>';
+        return;
+    }
+    container.innerHTML = globalNotifications.map(n => {
+        const isAuto = String(n.type || '').startsWith('auto');
+        const senderLabel = isAuto ? 'Automated' : escapeHtml(n.createdByName || 'Member');
+        const unreadDot = !n.read ? '<span class="inline-block w-2 h-2 rounded-full bg-rose-500 ml-1.5 align-middle"></span>' : '';
+        const ownerBtns = n.isMine ? `
+            <div class="flex flex-col gap-1 shrink-0">
+                <button onclick="event.stopPropagation(); startEditNotification(${n.id})" class="text-[9px] bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-2 py-0.5 rounded-lg">✏️</button>
+                <button onclick="event.stopPropagation(); deleteNotificationClick(${n.id})" class="text-[9px] bg-rose-100 hover:bg-rose-200 text-rose-600 font-bold px-2 py-0.5 rounded-lg">🗑</button>
+            </div>` : '';
+        return `
+            <div onclick="markNotificationRead(${n.id})" class="border rounded-xl p-3 cursor-pointer transition ${n.read ? 'bg-white border-gray-200' : 'bg-amber-50 border-amber-200'}">
+                <div class="flex justify-between items-start gap-2">
+                    <div class="min-w-0 flex-1">
+                        <p class="text-xs font-black text-slate-800 break-words">${escapeHtml(n.title)}${unreadDot}</p>
+                        <p class="text-[11px] text-slate-600 mt-0.5 break-words">${escapeHtml(n.message)}</p>
+                        <p class="text-[9px] text-slate-400 mt-1 font-semibold">${senderLabel} · ${timeAgo(n.createdAt)}</p>
+                    </div>
+                    ${ownerBtns}
+                </div>
+            </div>`;
+    }).join('');
+}
+async function sendNotificationSubmit() {
+    const titleEl = document.getElementById('notifComposeTitle');
+    const msgEl   = document.getElementById('notifComposeMessage');
+    const editIdEl = document.getElementById('notifEditingId');
+    const btn = document.getElementById('notifSendBtn');
+    const title = titleEl.value.trim();
+    const message = msgEl.value.trim();
+    if (!title || !message) { alert('Please fill in both the title and the message.'); return; }
+    const editingId = editIdEl.value;
+    btn.disabled = true; btn.textContent = editingId ? 'Updating...' : 'Sending...';
+    try {
+        const r = editingId
+            ? await apiPost({ action:'editNotification', id: Number(editingId), email: currentUser.email, title, message })
+            : await apiPost({ action:'sendNotification', email: currentUser.email, name: currentUser.name, title, message });
+        if (!r.success) { alert(r.error || 'Could not send notification.'); return; }
+        titleEl.value = ''; msgEl.value = '';
+        cancelNotifEdit();
+        await loadNotificationBadge();
+    } catch (e) { alert('Error: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = document.getElementById('notifEditingId').value ? 'Update' : 'Send'; }
+}
+function startEditNotification(id) {
+    const n = globalNotifications.find(x => x.id === id);
+    if (!n) return;
+    document.getElementById('notifComposeTitle').value = n.title;
+    document.getElementById('notifComposeMessage').value = n.message;
+    document.getElementById('notifEditingId').value = id;
+    document.getElementById('notifEditingHint').classList.remove('hidden');
+    document.getElementById('notifSendBtn').textContent = 'Update';
+    document.getElementById('notifComposeTitle').focus();
+}
+function cancelNotifEdit() {
+    document.getElementById('notifEditingId').value = '';
+    document.getElementById('notifEditingHint').classList.add('hidden');
+    const btn = document.getElementById('notifSendBtn');
+    if (btn) btn.textContent = 'Send';
+}
+async function markNotificationRead(id) {
+    const n = globalNotifications.find(x => x.id === id);
+    if (n && n.read) return;
+    if (n) { n.read = true; notifUnreadCount = Math.max(0, notifUnreadCount - 1); renderNotificationList(); updateNotifBadgeUI(); }
+    try { await apiPost({ action:'markNotificationRead', id, email: currentUser.email }); }
+    catch (e) { /* best-effort */ }
+}
+async function markAllNotificationsReadClick() {
+    globalNotifications.forEach(n => n.read = true);
+    notifUnreadCount = 0;
+    renderNotificationList();
+    updateNotifBadgeUI();
+    try { await apiPost({ action:'markAllNotificationsRead', email: currentUser.email }); }
+    catch (e) { alert('Error: ' + e.message); }
+}
+async function deleteNotificationClick(id) {
+    if (!confirm('Delete this notification?')) return;
+    try {
+        const r = await apiPost({ action:'deleteNotification', id, email: currentUser.email });
+        if (!r.success) { alert(r.error || 'Could not delete notification.'); return; }
+        await loadNotificationBadge();
+    } catch (e) { alert('Error: ' + e.message); }
 }
 </script>
 </body>

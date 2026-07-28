@@ -37,6 +37,19 @@ const MEAL_DEADLINE_OVERRIDE_TABLE = "meal_deadline_overrides";
 const BAZAR_SETTINGS_TABLE = "bazar_settings";
 const BAZAR_PERIODS_TABLE = "bazar_periods";
 const BAZAR_MEALS_TABLE = "bazar_meals";
+const NOTIFICATIONS_TABLE = "notifications";
+const NOTIFICATION_READS_TABLE = "notification_reads";
+const NOTIFICATION_RETENTION_DAYS = 3;
+
+// ─── Notification cleanup (keeps the table light — 3 day retention) ───────────
+async function cleanupOldNotifications(db) {
+  const cutoff = new Date(Date.now() - NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  try {
+    await db.from(NOTIFICATIONS_TABLE).delete().lt("created_at", cutoff);
+  } catch (e) {
+    console.error("Notification cleanup failed:", e);
+  }
+}
 
 function isMissingMobileNumberColumn(error) {
   const message = String(error?.message || error?.details || "");
@@ -1071,6 +1084,131 @@ export default async function handler(req, res) {
           },
           { onConflict: "month_key,member_email" }
         );
+      }
+      return sendJson(res, { success: true });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // NOTIFICATIONS
+    // ════════════════════════════════════════════════════════════════════════
+    if (action === "getNotifications") {
+      const userEmail = String(req.query.email || "").toLowerCase().trim();
+      await cleanupOldNotifications(db);
+
+      const { data: rows, error } = await db
+        .from(NOTIFICATIONS_TABLE)
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+
+      let readSet = new Set();
+      if (userEmail) {
+        const { data: reads, error: readsErr } = await db
+          .from(NOTIFICATION_READS_TABLE)
+          .select("notification_id")
+          .eq("member_email", userEmail);
+        if (readsErr) throw readsErr;
+        readSet = new Set((reads || []).map(r => r.notification_id));
+      }
+
+      const notifications = (rows || []).map(n => ({
+        id: n.id,
+        title: n.title,
+        message: n.message,
+        type: n.notif_type,
+        createdByEmail: n.created_by_email,
+        createdByName: n.created_by_name,
+        createdAt: n.created_at,
+        isMine: Boolean(userEmail) && n.created_by_email === userEmail,
+        read: readSet.has(n.id),
+      }));
+      const unreadCount = notifications.filter(n => !n.read).length;
+
+      return sendJson(res, { success: true, notifications, unreadCount });
+    }
+
+    if (action === "sendNotification") {
+      const { email, name, title, message } = req.body;
+      const userEmail = String(email || "").toLowerCase().trim();
+      const cleanTitle = String(title || "").trim();
+      const cleanMessage = String(message || "").trim();
+      if (!userEmail) return sendJson(res, { success: false, error: "You must be logged in to send a notification." });
+      if (!cleanTitle || !cleanMessage) return sendJson(res, { success: false, error: "Title and message are required." });
+
+      const { data: sender } = await db.from("members").select("authority")
+        .eq("email", userEmail).maybeSingle();
+      if (String(sender?.authority || "").toLowerCase() === "bua") {
+        return sendJson(res, { success: false, error: "Not permitted." });
+      }
+
+      const { error } = await db.from(NOTIFICATIONS_TABLE).insert({
+        title: cleanTitle.slice(0, 140),
+        message: cleanMessage.slice(0, 1000),
+        notif_type: "custom",
+        created_by_email: userEmail,
+        created_by_name: name || "Member",
+      });
+      if (error) throw error;
+      await cleanupOldNotifications(db);
+      return sendJson(res, { success: true });
+    }
+
+    if (action === "editNotification") {
+      const { id, email, title, message } = req.body;
+      const userEmail = String(email || "").toLowerCase().trim();
+      const cleanTitle = String(title || "").trim();
+      const cleanMessage = String(message || "").trim();
+      if (!cleanTitle || !cleanMessage) return sendJson(res, { success: false, error: "Title and message are required." });
+
+      const { data: requester } = await db.from("members").select("authority")
+        .eq("email", userEmail).maybeSingle();
+      const isAdmin = String(requester?.authority || "").toLowerCase() === "admin";
+
+      let query = db.from(NOTIFICATIONS_TABLE)
+        .update({ title: cleanTitle.slice(0, 140), message: cleanMessage.slice(0, 1000) })
+        .eq("id", id);
+      if (!isAdmin) query = query.eq("created_by_email", userEmail);
+      const { error } = await query;
+      if (error) throw error;
+      return sendJson(res, { success: true });
+    }
+
+    if (action === "deleteNotification") {
+      const { id, email } = req.body;
+      const userEmail = String(email || "").toLowerCase().trim();
+
+      const { data: requester } = await db.from("members").select("authority")
+        .eq("email", userEmail).maybeSingle();
+      const isAdmin = String(requester?.authority || "").toLowerCase() === "admin";
+
+      let query = db.from(NOTIFICATIONS_TABLE).delete().eq("id", id);
+      if (!isAdmin) query = query.eq("created_by_email", userEmail);
+      const { error } = await query;
+      if (error) throw error;
+      return sendJson(res, { success: true });
+    }
+
+    if (action === "markNotificationRead") {
+      const { id, email } = req.body;
+      const userEmail = String(email || "").toLowerCase().trim();
+      if (!userEmail) return sendJson(res, { success: false, error: "Missing user." });
+      const { error } = await db.from(NOTIFICATION_READS_TABLE)
+        .upsert({ notification_id: id, member_email: userEmail }, { onConflict: "notification_id,member_email" });
+      if (error) throw error;
+      return sendJson(res, { success: true });
+    }
+
+    if (action === "markAllNotificationsRead") {
+      const { email } = req.body;
+      const userEmail = String(email || "").toLowerCase().trim();
+      if (!userEmail) return sendJson(res, { success: false, error: "Missing user." });
+      const { data: rows, error } = await db.from(NOTIFICATIONS_TABLE).select("id");
+      if (error) throw error;
+      const upsertRows = (rows || []).map(r => ({ notification_id: r.id, member_email: userEmail }));
+      if (upsertRows.length) {
+        const { error: upErr } = await db.from(NOTIFICATION_READS_TABLE)
+          .upsert(upsertRows, { onConflict: "notification_id,member_email" });
+        if (upErr) throw upErr;
       }
       return sendJson(res, { success: true });
     }
