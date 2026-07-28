@@ -1,0 +1,1965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bachelor's Zone</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .hidden { display: none; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .meal-box { transition: background 0.18s, border-color 0.18s, opacity 0.18s, box-shadow 0.18s; }
+        .meal-on   { background:#f0fdf4; border-color:#22c55e; color:#15803d; box-shadow:0 0 0 3px #bbf7d0; }
+        .meal-half { background:#fffbeb; border-color:#f59e0b; color:#92400e; box-shadow:0 0 0 3px #fde68a; opacity:0.85; }
+        .meal-off  { background:#f9fafb; border-color:#d1d5db; color:#9ca3af; box-shadow:none; opacity:0.6; }
+        .meal-box.locked { pointer-events:none; filter:grayscale(0.6); opacity:0.45; }
+        .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; display:flex; align-items:center; justify-content:center; padding:16px; }
+        .modal-box { background:#fff; border-radius:1rem; padding:1.25rem; width:100%; max-width:420px; max-height:90vh; overflow-y:auto; }
+        .info-modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:300; display:flex; align-items:center; justify-content:center; padding:16px; }
+        .info-modal-box { background:#fff; border-radius:1.25rem; padding:1.5rem; width:100%; max-width:340px; box-shadow:0 20px 60px rgba(0,0,0,0.25); }
+        .status-paid { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
+        .status-due  { background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; }
+        .info-btn { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:#6366f1; color:#fff; font-size:9px; font-weight:900; cursor:pointer; border:none; line-height:1; flex-shrink:0; }
+        .info-btn:hover { background:#4f46e5; }
+        .spinner { display:inline-block; width:16px; height:16px; border:2px solid rgba(255,255,255,0.3); border-top-color:#fff; border-radius:50%; animation:spin 0.7s linear infinite; }
+        @keyframes spin { to { transform:rotate(360deg); } }
+        .roster-row-inactive { opacity:0.45; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans">
+
+<!-- LOGIN SCREEN -->
+<div id="loginScreen" class="hidden flex items-center justify-center min-h-screen px-4">
+    <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
+        <h2 class="text-3xl font-extrabold text-gray-800 mb-2 text-center">Bachelor's Zone</h2>
+        <p class="text-gray-500 text-sm text-center mb-6">Registered Members Only</p>
+        <div id="loginError" class="hidden mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl"></div>
+        <div class="space-y-4 mb-6">
+            <div>
+                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">Username / Email</label>
+                <input id="loginEmail" type="text" placeholder="yourname@gmail.com" class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">Password</label>
+                <input id="loginPassword" type="password" placeholder="••••••••" class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" onkeydown="if(event.key==='Enter') handleSecureLogin()">
+            </div>
+        </div>
+        <button onclick="handleSecureLogin()" id="loginBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-md text-sm">Verify & Access</button>
+        <button onclick="launchGuestOverview()" id="guestBtn" class="mt-3 w-full border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold py-3 rounded-xl transition text-sm">Go without account</button>
+    </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="appContainer" class="hidden max-w-md mx-auto bg-white min-h-screen shadow-lg pb-24 relative flex flex-col">
+
+    <!-- HEADER -->
+    <div id="appHeader" class="bg-gradient-to-br from-slate-800 to-indigo-900 text-white p-6 rounded-b-3xl shadow-md">
+        <div class="flex justify-between items-center mb-4">
+            <div>
+                <p class="text-xs text-indigo-200">Hi,</p>
+                <h3 id="userNameDisplay" class="text-xl font-bold">-</h3>
+            </div>
+            <select id="monthFilterSelect" onchange="refreshDataHub()" class="bg-white text-gray-800 text-xs font-bold px-2 py-1 rounded-md border focus:outline-none"></select>
+            <button onclick="logout()" class="text-xs bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-full transition">Logout</button>
+        </div>
+        <div class="grid grid-cols-3 gap-2 bg-black/20 p-3 rounded-xl text-center text-xs">
+            <div>
+                <span class="block text-slate-300">Meal Rate</span>
+                <strong id="ledgerRate" class="text-amber-300 text-sm">৳0.00</strong>
+            </div>
+            <div>
+                <span class="block text-slate-300">Your Balance</span>
+                <strong id="ledgerBalance" class="text-emerald-400 text-sm">৳0.00</strong>
+            </div>
+            <div>
+                <span class="block text-slate-300">Rent Status</span>
+                <strong id="ledgerRent" class="text-sm">Pending</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="p-4 flex-1 overflow-y-auto">
+
+        <!-- HOME TAB -->
+        <div id="tab-home" class="tab-content active space-y-4">
+            <div class="bg-white rounded-2xl shadow-md border p-5">
+                <div class="flex justify-between items-center mb-3">
+                    <h4 class="font-bold text-gray-800">Submit Today's Meal</h4>
+                    <span id="currentDateDisplay" class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded"></span>
+                </div>
+                <div id="mealSubmittedWarning" class="hidden text-[11px] bg-blue-50 text-blue-700 border border-blue-100 p-2 rounded-xl mb-3 font-medium">
+                    ✅ You already submitted today. Saving again will <strong>update</strong> your existing entry.
+                </div>
+                <div id="lockoutNoticeBanner" class="hidden text-[11px] bg-amber-50 text-amber-700 border border-amber-100 p-2 rounded-xl mb-3 font-medium"></div>
+                <div id="mealExtendedBanner" class="hidden text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-100 p-2 rounded-xl mb-3 font-medium">
+                    Meal entry time is extended for today by admin.
+                </div>
+                <input type="hidden" id="lunchInput"  value="1">
+                <input type="hidden" id="dinnerInput" value="1">
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                    <div id="lunchBox"  onclick="cycleMeal('lunch')"  class="meal-box meal-on cursor-pointer select-none rounded-2xl border-2 p-4 flex flex-col items-center justify-center gap-1 transition-all active:scale-95" style="min-height:88px">
+                        <span class="text-2xl">🍱</span>
+                        <span id="lunchBoxLabel"  class="text-sm font-extrabold tracking-wide">Lunch On</span>
+                        <span id="lunchBoxSub"    class="text-[10px] font-semibold opacity-60">tap · double-tap · tap</span>
+                    </div>
+                    <div id="dinnerBox" onclick="cycleMeal('dinner')" class="meal-box meal-on cursor-pointer select-none rounded-2xl border-2 p-4 flex flex-col items-center justify-center gap-1 transition-all active:scale-95" style="min-height:88px">
+                        <span class="text-2xl">🍛</span>
+                        <span id="dinnerBoxLabel" class="text-sm font-extrabold tracking-wide">Dinner On</span>
+                        <span id="dinnerBoxSub"   class="text-[10px] font-semibold opacity-60">tap · double-tap · tap</span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="flex items-center gap-2.5 cursor-pointer select-none w-fit">
+                        <input type="checkbox" id="guestToggle" onchange="toggleGuestSection()" class="w-4 h-4 accent-indigo-600 rounded">
+                        <span class="text-sm font-semibold text-gray-600">Guest? <span class="text-indigo-500">✓</span></span>
+                    </label>
+                </div>
+                <div id="guestSection" class="hidden grid grid-cols-2 gap-3 mb-4 bg-indigo-50/50 border border-indigo-100 rounded-xl p-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Guest Lunch</label>
+                        <select id="guestLunchInput" class="w-full bg-white border rounded-lg p-2 text-sm font-semibold">
+                            <option value="0" selected>0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Guest Dinner</label>
+                        <select id="guestDinnerInput" class="w-full bg-white border rounded-lg p-2 text-sm font-semibold">
+                            <option value="0" selected>0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option>
+                        </select>
+                    </div>
+                </div>
+                <button onclick="submitMeals()" id="submitMealBtn" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2.5 rounded-xl text-sm shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed">Save Selection</button>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-md border overflow-hidden">
+                <button onclick="toggleNext7PreferenceSection()" id="next7PreferenceToggle" class="w-full flex justify-between items-center gap-3 p-4 text-left active:bg-slate-50">
+                    <div>
+                        <h4 class="font-bold text-gray-800">Next 7 Days Preference</h4>
+                        <p id="next7PreferenceSummary" class="text-[11px] text-gray-400 font-semibold">Tap to select future meals</p>
+                    </div>
+                    <span id="next7PreferenceIcon" class="shrink-0 text-slate-400 text-lg font-black">v</span>
+                </button>
+                <div id="next7PreferencePanel" class="hidden border-t px-4 pb-4">
+                    <div class="flex justify-end py-3">
+                        <button onclick="applyTodayMealToNext7()" class="text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg">Use Today</button>
+                    </div>
+                    <div id="next7PreferenceNotice" class="hidden text-[11px] border p-2 rounded-xl mb-3 font-medium"></div>
+                    <div class="grid grid-cols-[1fr_86px_86px] gap-2 px-2 mb-1 text-[10px] font-black uppercase text-slate-400">
+                        <span>Date</span><span class="text-center">Lunch</span><span class="text-center">Dinner</span>
+                    </div>
+                    <div id="next7PreferenceRows" class="space-y-2 mb-4"></div>
+                    <button onclick="submitNext7Preferences()" id="next7PreferenceBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed">Save Next 7 Days</button>
+                </div>
+            </div>
+
+            <div id="bazarMealPlannerCard" class="hidden bg-amber-50 rounded-2xl p-4 border border-amber-200 shadow-sm">
+                <div class="flex items-center justify-between gap-3 mb-3">
+                    <h4 id="bazarMealTitle" class="font-black text-amber-950 text-sm">Today's Meal</h4>
+                    <span id="bazarMealRoleLabel" class="text-[10px] font-black uppercase tracking-wide text-amber-700 bg-white border border-amber-200 px-2 py-1 rounded-full">Menu</span>
+                </div>
+                <div id="bazarMealToday" class="grid grid-cols-2 gap-3"></div>
+                <div id="bazarMealEditor" class="hidden mt-4 border-t border-amber-200 pt-4">
+                    <p id="bazarMealEditorHelp" class="text-[11px] text-amber-800 font-semibold mb-3"></p>
+                    <div class="grid grid-cols-[62px_1fr_1fr] gap-2 px-1 mb-1 text-[10px] font-black uppercase text-amber-700">
+                        <span>Date</span><span>Lunch</span><span>Dinner</span>
+                    </div>
+                    <div id="bazarMealRows" class="space-y-2"></div>
+                    <button onclick="saveBazarMeals()" id="bazarMealSaveBtn" class="w-full mt-3 bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 rounded-xl text-sm shadow-md">Save All Meals</button>
+                </div>
+            </div>
+
+            <div id="mealOverviewCard" class="bg-slate-50 rounded-2xl p-4 border border-slate-200 shadow-sm">
+             <div id="currentBazarBanner" class="hidden mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 shadow-sm"></div>
+                <div class="flex items-center justify-between mb-3">
+                    <h4 class="font-black text-slate-800 text-sm">Today's Live Meal Overview</h4>
+                    <span class="text-[10px] font-black uppercase tracking-wide text-slate-400 bg-white border border-slate-200 px-2 py-1 rounded-full">Live</span>
+                </div>
+                <div class="grid grid-cols-2 gap-3 text-center mb-4">
+                    <div class="bg-white border border-blue-100 p-3 rounded-2xl shadow-xs">
+                        <span class="block text-[11px] font-black text-blue-600 uppercase">Lunch</span>
+                        <span id="totLunch" class="text-3xl font-black text-blue-950 leading-tight">0</span>
+                        <span class="block text-[10px] font-bold text-slate-400">Total Count</span>
+                    </div>
+                    <div class="bg-white border border-violet-100 p-3 rounded-2xl shadow-xs">
+                        <span class="block text-[11px] font-black text-violet-600 uppercase">Dinner</span>
+                        <span id="totDinner" class="text-3xl font-black text-violet-950 leading-tight">0</span>
+                        <span class="block text-[10px] font-bold text-slate-400">Total Count</span>
+                    </div>
+                </div>
+                <p class="text-xs font-bold text-gray-400 uppercase mb-2">Live Meal Update</p>
+                <div id="rosterList" class="space-y-1.5 text-sm max-h-48 overflow-y-auto"></div>
+            </div>
+            <div id="guestBackLoginBar" class="hidden mb-6 flex justify-center items-center w-full">
+  <button 
+    onclick="backToLoginFromGuest()" 
+    class="relative group overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-sm font-bold text-white shadow-md transition-all duration-300 ease-out hover:from-blue-500 hover:to-indigo-500 hover:shadow-indigo-200 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 active:scale-95"
+  >
+    <span class="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></span>
+    
+    <span class="flex items-center gap-2">
+      <svg class="w-4 h-4 transition-transform duration-300 group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+      </svg>
+      Log-in as Member
+    </span>
+  </button>
+</div>   
+
+            <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
+                <div class="flex justify-between items-center border-b pb-2 mb-3">
+                    <h4 class="font-bold text-slate-800 text-sm flex items-center gap-1"><span>🔌</span> Shared Utility Bills</h4>
+                    <span id="utilityActiveMembersLabel" class="text-[10px] bg-slate-100 font-bold text-slate-600 px-2 py-0.5 rounded-md">0 Members Active</span>
+                </div>
+                <div class="grid grid-cols-3 gap-2 text-center text-xs mb-3">
+                    <div class="bg-slate-50 p-2 rounded-xl border border-slate-100"><span class="text-gray-400 block text-[10px] uppercase font-semibold">Electricity</span><strong id="utilDashElec" class="text-slate-700">৳0</strong></div>
+                    <div class="bg-slate-50 p-2 rounded-xl border border-slate-100"><span class="text-gray-400 block text-[10px] uppercase font-semibold">Wifi Internet</span><strong id="utilDashWifi" class="text-slate-700">৳0</strong></div>
+                    <div class="bg-slate-50 p-2 rounded-xl border border-slate-100"><span class="text-gray-400 block text-[10px] uppercase font-semibold">Gas Bill</span><strong id="utilDashGas" class="text-slate-700">৳0</strong></div>
+                    <div class="bg-slate-50 p-2 rounded-xl border border-slate-100"><span class="text-gray-400 block text-[10px] uppercase font-semibold">Water Filter</span><strong id="utilDashFilter" class="text-slate-700">৳0</strong></div>
+                    <div class="bg-slate-50 p-2 rounded-xl border border-slate-100"><span class="text-gray-400 block text-[10px] uppercase font-semibold">Bua / Cook</span><strong id="utilDashBua" class="text-slate-700">৳0</strong></div>
+                    <div class="bg-slate-50 p-2 rounded-xl border border-slate-100"><span class="text-gray-400 block text-[10px] uppercase font-semibold">Others</span><strong id="utilDashOther" class="text-slate-700">৳0</strong></div>
+                </div>
+                <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-3 flex justify-between items-center text-xs">
+                    <div>
+                        <span class="font-bold text-indigo-950 block">Total Shared Split</span>
+                        <span class="text-[10px] text-indigo-500">Fixed Cost Per Head Contribution</span>
+                    </div>
+                    <strong id="utilDashSplitTotal" class="text-base font-black text-indigo-700">৳0.00</strong>
+                </div>
+            </div>
+        </div>
+
+        <!-- BAZAR TAB -->
+        <div id="tab-bazar" class="tab-content space-y-4">
+            <div class="bg-white rounded-2xl border p-4 shadow-xs">
+                <div class="flex items-center justify-between gap-3 mb-3">
+                    <div>
+                        <h4 class="font-bold text-gray-800">Bazar Date</h4>
+                        <p id="bazarDateMonthLabel" class="text-[11px] text-gray-400 font-semibold">Selected month</p>
+                    </div>
+                    <span id="bazarDateStatus" class="text-[10px] bg-slate-100 text-slate-500 font-black px-2 py-1 rounded-full"></span>
+                </div>
+                <div id="bazarSplitAdminBox" class="hidden bg-indigo-50/50 border border-indigo-100 rounded-xl p-3 mb-3">
+                    <label class="block text-[11px] font-bold text-indigo-900 uppercase tracking-wide mb-1">Split Between</label>
+                    <div class="flex gap-2">
+                        <input id="bazarSplitInput" type="number" min="1" class="flex-1 border rounded-lg p-2 bg-white text-sm font-bold">
+                        <button onclick="adminSaveBazarSplit()" id="bazarSplitSaveBtn" class="bg-indigo-600 text-white text-xs px-3 py-2 font-bold rounded-lg hover:bg-indigo-700 disabled:bg-gray-400">Save</button>
+                    </div>
+                    <p class="text-[10px] text-indigo-500 mt-1">Changing this will reset this month's selected periods.</p>
+                </div>
+                <div id="bazarPeriodOptions" class="grid grid-cols-2 gap-2"></div>
+            </div>
+
+            <div class="bg-white rounded-2xl border p-4 shadow-xs">
+                <h4 class="font-bold text-gray-800 mb-3">Add Bazar Expense</h4>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">Item Details</label>
+                        <input id="bazarItems" type="text" placeholder="e.g., Chicken, Rice, Oil" class="w-full bg-gray-50 border rounded-lg p-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">Total Cost (৳)</label>
+                        <input id="bazarCost" type="number" placeholder="0.00" class="w-full bg-gray-50 border rounded-lg p-2 text-sm">
+                    </div>
+                    <button onclick="submitBazar()" id="bazarBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-sm">Submit</button>
+                </div>
+            </div>
+            <div class="bg-gray-50 rounded-2xl p-4 border">
+                <h4 class="font-bold text-gray-700 text-sm mb-2">Bazar Log for Selected Month</h4>
+                <div id="bazarLogContainer" class="space-y-2 max-h-64 overflow-y-auto"></div>
+            </div>
+        </div>
+
+        <!-- LEDGER TAB -->
+        <div id="tab-ledger" class="tab-content space-y-4">
+            <div class="bg-white rounded-2xl border p-4">
+                <div class="flex flex-col space-y-3 mb-4">
+                    <div class="flex items-center justify-between gap-2">
+                        <h4 class="font-bold text-gray-800 text-sm">Monthly Meal Logs</h4>
+                        <div class="flex items-center gap-2">
+                            <label class="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-500 bg-slate-50 border border-slate-200 rounded-full px-2 py-1">
+                                <input id="monthHighlightToggle" type="checkbox" checked onchange="applyNameFilter()" class="h-3.5 w-3.5 accent-indigo-600">
+                                Highlight
+                            </label>
+                            <span id="monthLogCount" class="text-[10px] bg-slate-100 text-slate-500 font-black px-2 py-1 rounded-full">0 entries</span>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-[11px] font-bold uppercase text-gray-400 mb-1">Filter by Member</label>
+                        <select id="nameFilterSelect" onchange="applyNameFilter()" class="w-full bg-gray-50 border rounded-lg p-2 text-sm font-semibold text-slate-700 focus:outline-none">
+                            <option value="ALL">All Members</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold uppercase text-gray-400 mb-1">Filter by Date</label>
+                        <select id="dateFilterSelect" onchange="applyNameFilter()" class="w-full bg-gray-50 border rounded-lg p-2 text-sm font-semibold text-slate-700 focus:outline-none">
+                            <option value="ALL">All Dates</option>
+                        </select>
+                    </div>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs text-gray-600">
+                        <thead>
+                            <tr class="bg-gray-100 text-gray-700 uppercase font-bold">
+                                <th class="p-2">Date</th><th class="p-2">Name</th><th class="p-2 text-center">L</th><th class="p-2 text-center">D</th><th class="p-2 text-center">GL</th><th class="p-2 text-center">GD</th>
+                            </tr>
+                        </thead>
+                        <tbody id="monthTableBody" class="divide-y"></tbody>
+                        <tfoot id="monthTableFoot" class="border-t-2 border-gray-300 bg-indigo-50 font-black text-indigo-800"></tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- CHECK DUES TAB -->
+        <div id="tab-dues" class="tab-content space-y-4">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-black text-slate-800 tracking-tight">📊 Month Dues Check</h3>
+                <span id="duesMonthLabel" class="text-xs bg-slate-200 text-slate-700 font-bold px-2 py-1 rounded"></span>
+            </div>
+
+            <div class="bg-white border rounded-2xl p-5 shadow-sm space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Select Member to Inspect</label>
+                    <select id="duesMemberDropdown" onchange="syncDuesMemberView()" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm font-bold text-slate-700 focus:outline-none"></select>
+                </div>
+
+                <div id="duesDetailsCard" class="hidden border-t pt-4 space-y-4">
+                    <div class="flex justify-between items-center bg-slate-50/50 p-3 rounded-xl border border-dashed">
+                        <div>
+                            <span class="block text-xs font-bold text-slate-700">Room Rent</span>
+                            <span id="duesRentAmtLabel" class="text-[10px] text-gray-400">Monthly rent amount</span>
+                        </div>
+                        <div id="duesRentStatusContainer"></div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-slate-50 p-3 rounded-xl text-center border relative">
+                            <span class="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Month Due</span>
+                            <strong id="duesCardMonthDue" class="text-base font-black text-amber-600">৳0.00</strong>
+                            <button class="info-btn absolute bottom-2 right-2" style="background:#d97706;" onclick="showBalanceInfo('month')" title="View breakdown">i</button>
+                        </div>
+                        <div class="bg-slate-50 p-3 rounded-xl text-center border relative">
+                            <span class="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Lifetime Balance</span>
+                            <strong id="duesCardOverallBalance" class="text-base font-black text-slate-800">৳0.00</strong>
+                            <button class="info-btn absolute bottom-2 right-2" onclick="showBalanceInfo('overall')" title="View breakdown">i</button>
+                        </div>
+                    </div>
+
+                    <div id="duesAdjustmentBox" class="bg-indigo-50/30 border border-indigo-100 rounded-xl p-3 space-y-2">
+                        <label class="block text-[11px] font-bold text-indigo-900 uppercase tracking-wide">Adjust Balance Amount</label>
+                        <input id="duesCardAdjAmt" type="number" placeholder="Amount (৳ ±)" class="w-full px-3 py-1.5 text-xs font-medium border rounded-lg bg-white">
+                        <input id="duesCardAdjRemarks" type="text" placeholder="Remarks (optional)" class="w-full px-3 py-1.5 text-xs font-medium border rounded-lg bg-white">
+                        <button id="duesAdjSaveBtn" onclick="submitDuesCardAdjustment()" class="w-full bg-indigo-600 text-white text-xs py-2 font-bold rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed">Save Adjustment</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AUDIT / ADJUSTMENT HISTORY -->
+            <div class="bg-white border rounded-2xl p-5 shadow-sm space-y-3">
+                <div class="flex items-center justify-between">
+                    <h4 class="font-bold text-slate-800 text-sm flex items-center gap-1.5"><span>🔍</span> Adjust History</h4>
+                    <span id="duesMonthLabel2" class="text-xs bg-slate-200 text-slate-700 font-bold px-2 py-1 rounded"></span>
+                </div>
+                <div>
+                    <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Filter by Member</label>
+                    <select id="auditMemberFilter" onchange="applyAuditFilter()" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-none">
+                        <option value="ALL">All Members</option>
+                    </select>
+                </div>
+                <div id="auditHistoryContainer" class="space-y-2 max-h-72 overflow-y-auto">
+                    <p class="text-gray-400 text-xs italic text-center py-4">No adjustment records for this month.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ADMIN TAB -->
+        <div id="tab-admin" class="tab-content space-y-4">
+            <h3 class="text-xl font-black text-amber-800 tracking-tight">👑 Admin Panel</h3>
+
+            <!-- ── Month Roster & Member Directory (combined) ── -->
+            <div class="bg-blue-50/60 border border-blue-200 rounded-2xl p-4 shadow-xs space-y-3">
+                <!-- Section tabs -->
+                <div class="flex gap-1.5">
+                    <button id="rosterDirTab1" onclick="switchAdminSubTab('roster')" class="flex-1 text-[11px] py-1.5 rounded-lg font-bold bg-blue-600 text-white">📋 Running Member</button>
+                    <button id="rosterDirTab2" onclick="switchAdminSubTab('directory')" class="flex-1 text-[11px] py-1.5 rounded-lg font-bold bg-gray-100 text-gray-600">👥 Member Directory</button>
+                </div>
+
+                <!-- ROSTER sub-panel -->
+                <div id="adminSubRoster">
+                    <div class="flex justify-between items-center mb-2">
+                        <p id="rosterMonthLabel" class="text-[10px] text-blue-600 font-semibold"></p>
+                        <button onclick="openRosterModal()" class="text-[11px] bg-blue-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-blue-700">⚙ Manage Member</button>
+                    </div>
+                    <div id="currentRosterPreview" class="space-y-1.5 max-h-48 overflow-y-auto"></div>
+                </div>
+
+                <!-- DIRECTORY sub-panel (hidden by default) -->
+                <div id="adminSubDirectory" class="hidden">
+                    <div class="flex justify-end mb-2">
+                        <button onclick="openMemberModal()" class="text-[11px] bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-700">+ Add Member</button>
+                    </div>
+                    <div id="memberListContainer" class="space-y-2 max-h-60 overflow-y-auto"></div>
+                </div>
+            </div>
+
+            <!-- Fix Member Meal Logs -->
+            <div class="bg-amber-50/60 border border-amber-200 rounded-2xl p-4 shadow-xs space-y-3">
+                <h4 class="text-xs font-bold text-amber-900 uppercase">Fix Member Meal Logs</h4>
+                <label class="flex items-center justify-between gap-3 bg-white border border-amber-100 rounded-xl p-3 text-xs">
+                    <span>
+                        <strong class="block text-amber-900">Extend meal entry time for today</strong>
+                        <span class="text-amber-600">Members can update meals today without deadline.</span>
+                    </span>
+                    <input id="mealDeadlineToggle" type="checkbox" onchange="adminToggleMealDeadlineOverride()" class="w-5 h-5 accent-amber-600">
+                </label>
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                        <label class="block text-gray-600 mb-1">Select Member</label>
+                        <select id="admMealUser" class="w-full border rounded p-2 bg-white font-medium"></select>
+                    </div>
+                    <div>
+                        <label class="block text-gray-600 mb-1">Target Date</label>
+                        <input id="admMealDate" type="date" class="w-full border rounded p-1.5 bg-white">
+                    </div>
+                </div>
+                <div class="grid grid-cols-4 gap-2 text-xs">
+                    <div><label class="block text-gray-600 mb-1">Lunch</label><input id="admMealLunch" type="number" step="0.5" class="w-full border rounded p-1.5" value="1"></div>
+                    <div><label class="block text-gray-600 mb-1">Dinner</label><input id="admMealDinner" type="number" step="0.5" class="w-full border rounded p-1.5" value="1"></div>
+                    <div><label class="block text-gray-600 mb-1">G.Lunch</label><input id="admMealGuestLunch" type="number" class="w-full border rounded p-1.5" value="0"></div>
+                    <div><label class="block text-gray-600 mb-1">G.Dinner</label><input id="admMealGuestDinner" type="number" class="w-full border rounded p-1.5" value="0"></div>
+                </div>
+                <button onclick="adminOverrideMealSubmit()" id="admMealBtn" class="w-full bg-amber-600 text-white font-bold text-xs py-2 rounded-xl">Fix & Save</button>
+            </div>
+
+            <!-- Update Utility Costs -->
+            <div class="bg-amber-50/60 border border-amber-200 rounded-2xl p-4 shadow-xs space-y-3">
+                <h4 class="text-xs font-bold text-amber-900 uppercase">Update Utility Costs</h4>
+                <div class="grid grid-cols-3 gap-2 text-xs">
+                    <div><label class="text-gray-600 block mb-0.5">Electricity</label><input id="utilElec" type="number" class="w-full border rounded p-1"></div>
+                    <div><label class="text-gray-600 block mb-0.5">Wifi</label><input id="utilWifi" type="number" class="w-full border rounded p-1"></div>
+                    <div><label class="text-gray-600 block mb-0.5">Gas</label><input id="utilGas" type="number" class="w-full border rounded p-1"></div>
+                    <div><label class="text-gray-600 block mb-0.5">Filter</label><input id="utilFilter" type="number" class="w-full border rounded p-1"></div>
+                    <div><label class="text-gray-600 block mb-0.5">Bua</label><input id="utilBua" type="number" class="w-full border rounded p-1"></div>
+                    <div><label class="text-gray-600 block mb-0.5">Other</label><input id="utilOther" type="number" class="w-full border rounded p-1"></div>
+                </div>
+                <button onclick="adminFixedCostsSubmit()" id="admUtilBtn" class="w-full bg-slate-700 text-white font-bold text-xs py-2 rounded-xl">Save Utilities</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- BOTTOM NAV -->
+    <div id="navBar" class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-gray-200 grid grid-cols-3 text-center h-16 items-center z-50">
+        <button onclick="switchTab('home',this)"   class="nav-btn text-xs font-bold text-blue-600 flex flex-col items-center"><span>🏠</span><span>Dashboard</span></button>
+        <button onclick="switchTab('bazar',this)"  class="nav-btn text-xs font-bold text-gray-500 flex flex-col items-center"><span>🛒</span><span>Bazar Hub</span></button>
+        <button onclick="switchTab('ledger',this)" class="nav-btn text-xs font-bold text-gray-500 flex flex-col items-center"><span>🗓️</span><span>Month List</span></button>
+        <button id="navDuesBtn"  onclick="switchTab('dues',this)"  class="nav-btn hidden text-xs font-bold text-gray-500 flex flex-col items-center"><span>📊</span><span>Check Dues</span></button>
+        <button id="navAdminBtn" onclick="switchTab('admin',this)" class="nav-btn hidden text-xs font-bold text-gray-500 flex flex-col items-center"><span>👑</span><span>Admin</span></button>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════ MODALS ════════════════════════════════════════════ -->
+
+<!-- ROSTER MODAL -->
+<div id="rosterModal" class="modal-overlay hidden">
+    <div class="modal-box space-y-3">
+        <div class="flex justify-between items-center mb-1">
+            <div>
+                <h3 class="font-black text-slate-800 text-sm">Running Member</h3>
+                <p id="rosterModalMonthLabel" class="text-[10px] text-slate-500"></p>
+            </div>
+            <button onclick="closeRosterModal()" class="text-gray-400 hover:text-gray-700 text-xl leading-none">&times;</button>
+        </div>
+
+        <!-- Suggestion banner -->
+        <div id="rosterSuggestionBanner" class="hidden bg-blue-50 border border-blue-200 rounded-xl p-2.5 text-[11px] text-blue-800">
+            <strong>💡 Suggestion loaded from prior month.</strong> Review and approve, or make changes below.
+        </div>
+
+        <!-- Roster list being built -->
+        <div id="rosterEditList" class="space-y-2 max-h-52 overflow-y-auto"></div>
+
+        <!-- Add from directory -->
+        <div class="bg-slate-50 border rounded-xl p-3 space-y-2">
+            <p class="text-[11px] font-bold text-slate-700 uppercase">Add Member to This Month</p>
+            <div class="flex gap-2">
+                <select id="rosterAddSelect" class="flex-1 border rounded-lg p-2 text-xs bg-white font-medium">
+                    <option value="">-- Select from directory --</option>
+                </select>
+                <button onclick="rosterAddMember()" class="bg-blue-600 text-white text-xs px-3 py-1.5 font-bold rounded-lg hover:bg-blue-700">Add</button>
+            </div>
+            <div class="flex gap-2">
+                <input id="rosterNewRent" type="number" placeholder="Rent ৳" class="flex-1 border rounded-lg p-2 text-xs bg-white">
+            </div>
+        </div>
+
+        <div class="flex gap-2 pt-1">
+            <button onclick="approveRoster()" id="rosterApproveBtn" class="flex-1 bg-emerald-600 text-white font-bold py-2.5 rounded-xl text-xs hover:bg-emerald-700 disabled:bg-gray-400">✅ Approve & Save Member</button>
+            <button onclick="closeRosterModal()" class="flex-1 bg-slate-100 text-slate-700 font-bold py-2.5 rounded-xl text-xs hover:bg-slate-200">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- MEMBER MODAL (directory only) -->
+<div id="memberModal" class="modal-overlay hidden">
+    <div class="modal-box space-y-3">
+        <div class="flex justify-between items-center mb-1">
+            <h3 id="memberModalTitle" class="font-black text-slate-800 text-sm">Add New Member</h3>
+            <button onclick="closeMemberModal()" class="text-gray-400 hover:text-gray-700 text-xl leading-none">&times;</button>
+        </div>
+        <input type="hidden" id="memberModalEditEmail">
+        <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="col-span-2"><label class="block text-gray-600 mb-0.5 font-semibold">Full Name</label><input id="memName" type="text" placeholder="John Doe" class="w-full border rounded-lg p-2 bg-gray-50 text-sm"></div>
+            <div class="col-span-2"><label class="block text-gray-600 mb-0.5 font-semibold">Email</label><input id="memEmail" type="email" placeholder="john@gmail.com" class="w-full border rounded-lg p-2 bg-gray-50 text-sm"></div>
+            <div><label class="block text-gray-600 mb-0.5 font-semibold">Password</label><input id="memPassword" type="text" placeholder="••••••" class="w-full border rounded-lg p-2 bg-gray-50 text-sm"></div>
+            <div><label class="block text-gray-600 mb-0.5 font-semibold">Mobile Number</label><input id="memMobile" type="tel" placeholder="01XXXXXXXXX" class="w-full border rounded-lg p-2 bg-gray-50 text-sm"></div>
+            <div class="col-span-2"><label class="block text-gray-600 mb-0.5 font-semibold">Authority</label><select id="memAuthority" class="w-full border rounded-lg p-2 bg-gray-50 text-sm font-semibold"><option value="Member">Member</option><option value="Admin">Admin</option><option value="Bua">Bua</option></select></div>
+        </div>
+        <p class="text-[10px] text-gray-400 bg-gray-50 p-2 rounded-lg">ℹ️ Rent amount and active status are managed per-month in the Member section.</p>
+        <button id="memberModalSaveBtn" onclick="saveMember()" class="w-full bg-emerald-600 text-white font-bold py-2 rounded-xl text-sm mt-1 hover:bg-emerald-700 disabled:bg-gray-400">Save Member</button>
+    </div>
+</div>
+
+<!-- BAZAR EDIT MODAL -->
+<div id="bazarEditModal" class="modal-overlay hidden">
+    <div class="modal-box space-y-3">
+        <div class="flex justify-between items-center mb-1">
+            <h3 class="font-black text-slate-800 text-sm">Edit Bazar Entry</h3>
+            <button onclick="closeBazarModal()" class="text-gray-400 hover:text-gray-700 text-xl leading-none">&times;</button>
+        </div>
+        <input type="hidden" id="bazarEditRowIndex">
+        <p class="text-[11px] text-gray-500 bg-gray-50 p-2 rounded-lg">Buyer: <strong id="bazarEditBuyer" class="text-slate-800"></strong> &nbsp;|&nbsp; Date: <strong id="bazarEditDate" class="text-slate-800"></strong></p>
+        <div class="space-y-2">
+            <div><label class="block text-xs text-gray-600 mb-0.5 font-semibold">Items</label><input id="bazarEditItems" type="text" class="w-full border rounded-lg p-2 bg-gray-50 text-sm"></div>
+            <div><label class="block text-xs text-gray-600 mb-0.5 font-semibold">Cost (৳)</label><input id="bazarEditCost" type="number" class="w-full border rounded-lg p-2 bg-gray-50 text-sm"></div>
+        </div>
+        <div class="flex gap-2 pt-1">
+            <button onclick="saveBazarEdit()" id="bazarEditSaveBtn" class="flex-1 bg-indigo-600 text-white font-bold py-2 rounded-xl text-xs hover:bg-indigo-700 disabled:bg-gray-400">Save Changes</button>
+            <button onclick="deleteBazarEntry()" id="bazarDeleteBtn" class="flex-1 bg-rose-500 text-white font-bold py-2 rounded-xl text-xs hover:bg-rose-600 disabled:bg-gray-400">🗑 Delete</button>
+        </div>
+    </div>
+</div>
+
+<!-- ADJUSTMENT EDIT MODAL -->
+<div id="adjEditModal" class="modal-overlay hidden">
+    <div class="modal-box space-y-3">
+        <div class="flex justify-between items-center mb-1">
+            <h3 class="font-black text-slate-800 text-sm">Edit Adjustment</h3>
+            <button onclick="closeAdjModal()" class="text-gray-400 hover:text-gray-700 text-xl leading-none">&times;</button>
+        </div>
+        <input type="hidden" id="adjEditRowIndex">
+        <p class="text-[11px] text-gray-500 bg-gray-50 p-2 rounded-lg">Member: <strong id="adjEditName" class="text-slate-800"></strong></p>
+        <div class="space-y-2">
+            <div><label class="block text-xs text-gray-600 mb-0.5 font-semibold">Amount (৳ ±)</label><input id="adjEditAmount" type="number" class="w-full border rounded-lg p-2 bg-gray-50 text-sm"></div>
+            <div><label class="block text-xs text-gray-600 mb-0.5 font-semibold">Remarks</label><input id="adjEditRemarks" type="text" class="w-full border rounded-lg p-2 bg-gray-50 text-sm"></div>
+        </div>
+        <div class="flex gap-2 pt-1">
+            <button onclick="saveAdjEdit()" id="adjEditSaveBtn" class="flex-1 bg-indigo-600 text-white font-bold py-2 rounded-xl text-xs hover:bg-indigo-700 disabled:bg-gray-400">Save Changes</button>
+            <button onclick="deleteAdjEntry()" id="adjDeleteBtn" class="flex-1 bg-rose-500 text-white font-bold py-2 rounded-xl text-xs hover:bg-rose-600 disabled:bg-gray-400">🗑 Delete</button>
+        </div>
+    </div>
+</div>
+
+<!-- BALANCE INFO MODAL -->
+<div id="balanceInfoModal" class="info-modal-overlay hidden">
+    <div class="info-modal-box">
+        <div class="flex justify-between items-center mb-4">
+            <h3 id="balanceInfoTitle" class="font-black text-slate-800 text-sm">Balance Breakdown</h3>
+            <button onclick="closeBalanceInfo()" class="text-gray-400 hover:text-gray-700 text-xl leading-none font-bold">&times;</button>
+        </div>
+        <div id="balanceInfoContent" class="space-y-2"></div>
+        <div class="mt-4 pt-3 border-t">
+            <div class="flex justify-between items-center">
+                <span class="text-xs font-black text-slate-700 uppercase tracking-wide">Net</span>
+                <strong id="balanceInfoNet" class="text-base font-black text-slate-800">৳0.00</strong>
+            </div>
+        </div>
+        <button onclick="closeBalanceInfo()" class="mt-4 w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl text-xs">Close</button>
+    </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+const API_URL = "https://bachelor-api.vercel.app/api";
+
+let currentUser          = null;
+let globalFullMonthMeals = [];
+let globalNext7Preferences = [];
+let globalActiveMembers  = [];   // active this month (from monthly_members)
+let globalAllMembers     = [];   // full directory
+let globalMonthMembersRaw = [];  // raw monthly_members for selected month
+let globalAdjustmentHistory = [];
+let globalBazarList      = [];
+let globalBazarSchedule  = { splitBetween:1, periods:[], currentPerson:"", currentPersonMobile:"" };
+let globalUtilityCostsRaw = { electricity:0, wifi:0, gas:0, filter:0, bua:0, other:0 };
+let globalHeadCount      = 1;
+let currentUserActiveForMonth = false;
+let mealDeadlineExtendedToday = false;
+let next7PreferenceOpen = false;
+let currentDuesMemberData = null;
+let optimisticRentState  = {};
+let rentTogglePending    = {};
+let adjSavePending       = false;
+let serverTodayDate      = null;
+let serverCurrentHour    = null;
+let isGuestMode          = false;
+
+// Roster modal state
+let rosterDraft = [];  // [{ email, name, rentAmount }]
+
+// ── Core API callers ───────────────────────────────────────────────
+async function apiGet(params) {
+    const url = API_URL + "?" + new URLSearchParams(params).toString();
+    const res = await fetch(url);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+}
+async function apiPost(body) {
+    const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+}
+
+// ── Utilities ──────────────────────────────────────────────────────
+function getTodayDateString() {
+    if (serverTodayDate) return serverTodayDate;
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function getCurrentMonthYearString() { return getTodayDateString().substring(0,7); }
+function getCurrentHour() {
+    return Number.isFinite(serverCurrentHour) ? serverCurrentHour : new Date().getHours();
+}
+function applyServerClock(clock) {
+    if (!clock || !clock.date) return;
+    serverTodayDate = clock.date;
+    serverCurrentHour = Number(clock.hour);
+    const dateEl = document.getElementById('currentDateDisplay');
+    if (dateEl) dateEl.innerText = serverTodayDate;
+    const admDate = document.getElementById('admMealDate');
+    if (admDate && !admDate.value) admDate.value = serverTodayDate;
+}
+async function refreshServerClock() {
+    const r = await apiGet({ action:'getServerClock' });
+    if (r && r.success) applyServerClock(r.serverClock);
+}
+function addDaysString(dateStr, days) {
+    const d = new Date(dateStr + 'T00:00:00');
+    d.setDate(d.getDate() + days);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function formatShortDate(dateStr) {
+    return new Date(dateStr + 'T00:00:00').toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' });
+}
+function mealEntryTotal(m) {
+    return (parseFloat(m?.lunch) || 0) +
+           (parseFloat(m?.dinner) || 0) +
+           (parseFloat(m?.guestLunch ?? m?.guest_lunch) || 0) +
+           (parseFloat(m?.guestDinner ?? m?.guest_dinner) || 0);
+}
+function hasAnyMeal(m) { return mealEntryTotal(m) > 0; }
+
+// ── Meal box machine ───────────────────────────────────────────────
+const mealState = { lunch:1, dinner:1 };
+function cycleMeal(meal) {
+    const box = document.getElementById(meal+'Box');
+    if (box && box.classList.contains('locked')) return;
+    if (!window._mealClickTimers) window._mealClickTimers = {};
+    if (window._mealClickTimers[meal]) {
+        clearTimeout(window._mealClickTimers[meal]);
+        delete window._mealClickTimers[meal];
+        mealState[meal] = mealState[meal] === 0.5 ? 1 : 0.5;
+        renderMealBox(meal); return;
+    }
+    window._mealClickTimers[meal] = setTimeout(() => {
+        delete window._mealClickTimers[meal];
+        if (mealState[meal]===1) mealState[meal]=0;
+        else if (mealState[meal]===0) mealState[meal]=1;
+        else mealState[meal]=0;
+        renderMealBox(meal);
+    }, 280);
+}
+function renderMealBox(meal) {
+    const val = mealState[meal];
+    const box = document.getElementById(meal+'Box');
+    const label = document.getElementById(meal+'BoxLabel');
+    const name = meal.charAt(0).toUpperCase() + meal.slice(1);
+    box.classList.remove('meal-on','meal-half','meal-off');
+    if (val===1)       { box.classList.add('meal-on');   label.textContent = name+' On'; }
+    else if (val===0.5){ box.classList.add('meal-half'); label.textContent = '½ '+name; }
+    else               { box.classList.add('meal-off');  label.textContent = name+' Off'; }
+    document.getElementById(meal+'Input').value = val;
+}
+function syncMealFormFromToday(todayMeal, meals) {
+    if (!currentUser) return;
+    const today = getTodayDateString();
+    const hour = getCurrentHour();
+    const existing = todayMeal || (meals || []).find(l =>
+        l.date === today &&
+        (l.email ? l.email.toLowerCase() === currentUser.email.toLowerCase() : l.name.toUpperCase() === currentUser.name.toUpperCase())
+    );
+    const hasExisting = Boolean(existing);
+
+    if (hasExisting || (!mealDeadlineExtendedToday && hour >= 12)) {
+        mealState.lunch = hasExisting ? (parseFloat(existing.lunch) || 0) : 0;
+        document.getElementById('guestLunchInput').value = hasExisting ? (parseFloat(existing.guestLunch) || 0) : 0;
+    }
+    if (hasExisting || (!mealDeadlineExtendedToday && hour >= 18)) {
+        mealState.dinner = hasExisting ? (parseFloat(existing.dinner) || 0) : 0;
+        document.getElementById('guestDinnerInput').value = hasExisting ? (parseFloat(existing.guestDinner) || 0) : 0;
+    }
+
+    renderMealBox('lunch');
+    renderMealBox('dinner');
+}
+function toggleGuestSection() {
+    const cb  = document.getElementById('guestToggle');
+    const sec = document.getElementById('guestSection');
+    if (!sec) return;
+    if (cb.checked) { sec.classList.remove('hidden'); sec.style.display='grid'; }
+    else { sec.classList.add('hidden'); sec.style.display='none';
+           document.getElementById('guestLunchInput').value='0';
+           document.getElementById('guestDinnerInput').value='0'; }
+}
+function lockMealBox(meal) { const b=document.getElementById(meal+'Box'); if(b) b.classList.add('locked'); }
+function unlockMealBox(meal) { const b=document.getElementById(meal+'Box'); if(b) b.classList.remove('locked'); }
+function checkLockoutRestrictions() {
+    const hour = getCurrentHour();
+    const gL = document.getElementById('guestLunchInput');
+    const gD = document.getElementById('guestDinnerInput');
+    const btn = document.getElementById('submitMealBtn');
+    const banner = document.getElementById('lockoutNoticeBanner');
+    let txt = "";
+    unlockMealBox('lunch');
+    unlockMealBox('dinner');
+    if (gL) gL.disabled = false;
+    if (gD) gD.disabled = false;
+    if (btn) btn.disabled = false;
+    if (banner) { banner.innerText = ""; banner.classList.add('hidden'); }
+    const extendedBanner = document.getElementById('mealExtendedBanner');
+    if (mealDeadlineExtendedToday) {
+        if (extendedBanner) extendedBanner.classList.remove('hidden');
+        return;
+    }
+    if (extendedBanner) extendedBanner.classList.add('hidden');
+    if (hour >= 12) {
+        lockMealBox('lunch');
+        if (gL) gL.disabled = true;
+        txt = "⚠️ Lunch session is closed (deadline: 12:00 PM).";
+    }
+    if (hour >= 18) {
+        lockMealBox('dinner');
+        if (gD) gD.disabled = true;
+        if (btn) btn.disabled = true;
+        txt = "🔒 All meal submissions are locked for today (Lunch: 12PM & Dinner: 6PM).";
+    }
+    if (txt && banner) { banner.innerText = txt; banner.classList.remove('hidden'); }
+}
+function checkExistingSubmissionForToday(meals) {
+    const wb = document.getElementById('mealSubmittedWarning');
+    if (!wb || !currentUser) return;
+    const bothMealsLocked = !mealDeadlineExtendedToday && getCurrentHour() >= 18;
+    if (bothMealsLocked) { wb.classList.add('hidden'); return; }
+    const today = getTodayDateString();
+    const found = meals.some(l => l.date === today && l.name.toUpperCase() === currentUser.name.toUpperCase());
+    found ? wb.classList.remove('hidden') : wb.classList.add('hidden');
+}
+function mealPreferenceOptions(selected) {
+    const val = String(parseFloat(selected) || 0);
+    return [
+        { value:'1', label:'On' },
+        { value:'0.5', label:'Half' },
+        { value:'0', label:'Off' },
+    ].map(o => `<option value="${o.value}" ${String(parseFloat(o.value)) === val ? 'selected' : ''}>${o.label}</option>`).join('');
+}
+function updateNext7PreferenceToggle() {
+    const panel = document.getElementById('next7PreferencePanel');
+    const icon = document.getElementById('next7PreferenceIcon');
+    const summary = document.getElementById('next7PreferenceSummary');
+    if (panel) panel.classList.toggle('hidden', !next7PreferenceOpen);
+    if (icon) icon.textContent = next7PreferenceOpen ? '^' : 'v';
+    if (summary) {
+        const savedCount = (globalNext7Preferences || []).length;
+        summary.textContent = next7PreferenceOpen
+            ? 'Select meals for the next 7 days'
+            : (savedCount ? `${savedCount} future day${savedCount === 1 ? '' : 's'} saved` : 'Tap to select future meals');
+    }
+}
+function toggleNext7PreferenceSection() {
+    next7PreferenceOpen = !next7PreferenceOpen;
+    updateNext7PreferenceToggle();
+}
+function renderNext7Preferences() {
+    const container = document.getElementById('next7PreferenceRows');
+    if (!container) return;
+    const savedMap = {};
+    (globalNext7Preferences || []).forEach(p => { savedMap[p.date] = p; });
+    container.innerHTML = '';
+    for (let i = 1; i <= 7; i++) {
+        const date = addDaysString(getTodayDateString(), i);
+        const pref = savedMap[date] || { lunch:1, dinner:1 };
+        container.innerHTML += `
+            <div class="grid grid-cols-[1fr_86px_86px] gap-2 items-center bg-slate-50 border rounded-xl p-2">
+                <div>
+                    <strong class="block text-xs text-slate-800">${formatShortDate(date)}</strong>
+                    <span class="text-[10px] text-slate-400">${date}</span>
+                </div>
+                <select data-pref-date="${date}" data-pref-field="lunch" class="bg-white border rounded-lg p-2 text-xs font-bold text-slate-700">
+                    ${mealPreferenceOptions(pref.lunch)}
+                </select>
+                <select data-pref-date="${date}" data-pref-field="dinner" class="bg-white border rounded-lg p-2 text-xs font-bold text-slate-700">
+                    ${mealPreferenceOptions(pref.dinner)}
+                </select>
+            </div>`;
+    }
+    updateNext7PreferenceToggle();
+}
+function applyTodayMealToNext7() {
+    const lunch = document.getElementById('lunchInput').value || '1';
+    const dinner = document.getElementById('dinnerInput').value || '1';
+    document.querySelectorAll('[data-pref-field="lunch"]').forEach(el => { el.value = lunch; });
+    document.querySelectorAll('[data-pref-field="dinner"]').forEach(el => { el.value = dinner; });
+    setNext7PreferenceNotice('Today selection copied to all 7 days.', 'info');
+}
+function setNext7PreferenceNotice(text, type='info') {
+    const box = document.getElementById('next7PreferenceNotice');
+    if (!box) return;
+    if (!text) { box.classList.add('hidden'); box.innerText = ''; return; }
+    box.innerText = text;
+    box.className = `text-[11px] border p-2 rounded-xl mb-3 font-medium ${type === 'error' ? 'bg-rose-50 text-rose-700 border-rose-100' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`;
+}
+function collectNext7Preferences() {
+    const byDate = {};
+    document.querySelectorAll('[data-pref-date]').forEach(el => {
+        const date = el.dataset.prefDate;
+        const field = el.dataset.prefField;
+        byDate[date] = byDate[date] || { date, guestLunch:0, guestDinner:0 };
+        byDate[date][field] = parseFloat(el.value) || 0;
+    });
+    return Object.values(byDate).sort((a,b) => a.date.localeCompare(b.date));
+}
+function updateBazarSubmitState() {
+    const btn = document.getElementById('bazarBtn');
+    if (!btn || !currentUser) return;
+    btn.disabled = !currentUserActiveForMonth;
+    btn.textContent = currentUserActiveForMonth ? "Submit" : "Inactive This Month";
+    btn.classList.toggle('opacity-60', !currentUserActiveForMonth);
+    btn.classList.toggle('cursor-not-allowed', !currentUserActiveForMonth);
+}
+function normalizePhoneForTel(phone) {
+    return String(phone || "").replace(/[^+\d]/g, "");
+}
+function renderCurrentBazarBanner() {
+    const banner = document.getElementById('currentBazarBanner');
+    if (!banner) return;
+    const name = (globalBazarSchedule && globalBazarSchedule.currentPerson) || "";
+    const mobile = normalizePhoneForTel(globalBazarSchedule && globalBazarSchedule.currentPersonMobile);
+    if (!name) {
+        banner.classList.add('hidden');
+        banner.innerHTML = "";
+        return;
+    }
+    const callControl = mobile
+        ? `<a href="tel:${mobile}" class="shrink-0 rounded-full bg-emerald-600 border border-emerald-600 px-3 py-1 text-[10px] font-black uppercase text-white shadow-sm hover:bg-emerald-700">Call</a>`
+        : `<span class="shrink-0 rounded-full bg-white border border-slate-200 px-3 py-1 text-[10px] font-black uppercase text-slate-400">Call</span>`;
+    banner.innerHTML = `
+        <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0">
+                <span class="block text-[10px] font-black uppercase tracking-wide text-emerald-600">Today's Bazar</span>
+                <strong class="block text-lg font-black text-emerald-950 leading-snug truncate">${name}</strong>
+                ${mobile ? `<span class="block text-[10px] font-bold text-emerald-700 truncate">${mobile}</span>` : ""}
+            </div>
+            ${callControl}
+        </div>`;
+    banner.classList.remove('hidden');
+}
+function escapeHtml(value) {
+    return String(value || '').replace(/[&<>'"]/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[ch]));
+}
+function formatBazarMealDate(date) {
+    const d = new Date(`${date}T00:00:00`);
+    return `${d.getDate()}/${d.getMonth() + 1}`;
+}
+function renderBazarMealPlanner(plan) {
+    const card = document.getElementById('bazarMealPlannerCard');
+    const todayBox = document.getElementById('bazarMealToday');
+    const editor = document.getElementById('bazarMealEditor');
+    if (!card || !todayBox || !editor) return;
+    if (!plan.canViewToday) { card.classList.add('hidden'); return; }
+    card.classList.remove('hidden');
+    const today = plan.today || {};
+    const isKhalaView = isBuaUser() && !plan.canManage;
+    const text = isKhalaView
+        ? { title:'আজকের মেনু', lunch:'দুপুর', dinner:'রাত', empty:'নির্ধারিত নয়', role:'খালার মেনু' }
+        : { title:"Today's Meal", lunch:'Lunch', dinner:'Dinner', empty:'Not set', role:'Bazar member' };
+    document.getElementById('bazarMealTitle').textContent = text.title;
+    todayBox.innerHTML = `
+        <div class="bg-white border border-amber-100 p-3 rounded-2xl"><span class="block text-[10px] font-black uppercase text-amber-600">${text.lunch}</span><strong class="block mt-1 text-sm text-amber-950 break-words">${escapeHtml(today.lunch || text.empty)}</strong></div>
+        <div class="bg-white border border-amber-100 p-3 rounded-2xl"><span class="block text-[10px] font-black uppercase text-amber-600">${text.dinner}</span><strong class="block mt-1 text-sm text-amber-950 break-words">${escapeHtml(today.dinner || text.empty)}</strong></div>`;
+    document.getElementById('bazarMealRoleLabel').textContent = text.role;
+    editor.classList.toggle('hidden', !plan.canManage);
+    if (!plan.canManage || !plan.period) return;
+    const existing = new Map((plan.meals || []).map(m => [m.date, m]));
+    const month = (serverTodayDate || getTodayDateString()).slice(0, 7);
+    const rows = document.getElementById('bazarMealRows');
+    document.getElementById('bazarMealEditorHelp').textContent = `Your Bazar dates are ${plan.period.label}. Set every day's lunch and dinner, then save them together.`;
+    rows.innerHTML = '';
+    for (let day = plan.period.startDay; day <= plan.period.endDay; day++) {
+        const date = `${month}-${String(day).padStart(2, '0')}`;
+        const item = existing.get(date) || {};
+        rows.innerHTML += `<div class="grid grid-cols-[62px_1fr_1fr] gap-2 items-center"><span class="text-xs font-black text-amber-900">${formatBazarMealDate(date)}</span><input data-bazar-meal-date="${date}" data-bazar-meal-field="lunch" value="${escapeHtml(item.lunch)}" placeholder="মাছ, ডাল, ভর্তা" maxlength="250" class="min-w-0 border border-amber-200 bg-white rounded-lg p-2 text-xs"><input data-bazar-meal-date="${date}" data-bazar-meal-field="dinner" value="${escapeHtml(item.dinner)}" placeholder="মুরগি, ডাল, শাক" maxlength="250" class="min-w-0 border border-amber-200 bg-white rounded-lg p-2 text-xs"></div>`;
+    }
+}
+async function saveBazarMeals() {
+    const byDate = {};
+    document.querySelectorAll('[data-bazar-meal-date]').forEach(el => {
+        const date = el.dataset.bazarMealDate;
+        byDate[date] = byDate[date] || { date, lunch:'', dinner:'' };
+        byDate[date][el.dataset.bazarMealField] = el.value;
+    });
+    const btn = document.getElementById('bazarMealSaveBtn');
+    if (!Object.keys(byDate).length || !btn) return;
+    btn.disabled = true; btn.textContent = 'Saving...';
+    try {
+        const result = await apiPost({ action:'saveBazarMeals', email:currentUser.email, meals:Object.values(byDate) });
+        if (!result.success) throw new Error(result.error || 'Unable to save the meals.');
+        await refreshDataHub();
+    } catch (e) { alert('Meal plan error: ' + (e.message || e)); }
+    finally { btn.disabled = false; btn.textContent = 'Save All Meals'; }
+}
+function renderBazarDateSection() {
+    const selectedMonth = document.getElementById('monthFilterSelect').value || getCurrentMonthYearString();
+    const isAdmin = currentUser && currentUser.authority && currentUser.authority.toLowerCase() === 'admin';
+    const adminBox = document.getElementById('bazarSplitAdminBox');
+    const splitInput = document.getElementById('bazarSplitInput');
+    const container = document.getElementById('bazarPeriodOptions');
+    const status = document.getElementById('bazarDateStatus');
+    const monthLabel = document.getElementById('bazarDateMonthLabel');
+    if (!container) return;
+
+    const periods = globalBazarSchedule.periods || [];
+    const selected = periods.find(p => p.memberEmail && currentUser && p.memberEmail.toLowerCase() === currentUser.email.toLowerCase());
+    if (adminBox) adminBox.classList.toggle('hidden', !isAdmin);
+    if (splitInput) splitInput.value = globalBazarSchedule.splitBetween || 1;
+    if (status) status.innerText = selected ? `Your period: ${selected.label}` : `${periods.length} periods`;
+    if (monthLabel) monthLabel.innerText = selectedMonth;
+
+    container.innerHTML = periods.length ? "" : '<p class="col-span-2 text-gray-400 text-xs italic">No bazar periods available.</p>';
+    periods.forEach(p => {
+        const assigned = Boolean(p.memberEmail);
+        const mine = assigned && currentUser && p.memberEmail.toLowerCase() === currentUser.email.toLowerCase();
+        const disabled = assigned || selected || !currentUserActiveForMonth;
+        const btnClass = mine
+            ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+            : assigned
+                ? "bg-slate-100 border-slate-200 text-slate-400"
+                : "bg-white border-indigo-100 text-indigo-800 hover:bg-indigo-50";
+        container.innerHTML += `
+            <button onclick="claimBazarPeriod(${p.startDay},${p.endDay})" ${disabled ? "disabled" : ""} class="border rounded-xl p-3 text-left ${btnClass} ${disabled ? "cursor-not-allowed" : "active:scale-95"}">
+                <strong class="block text-sm font-black">${p.label}</strong>
+                <span class="block text-[10px] font-bold mt-1">${assigned ? p.memberName : "Available"}</span>
+            </button>`;
+    });
+}
+
+// ── Auth ───────────────────────────────────────────────────────────
+window.onload = function() {
+    document.getElementById('currentDateDisplay').innerText = getTodayDateString();
+    document.getElementById('admMealDate').value = getTodayDateString();
+
+    const forceLogin = sessionStorage.getItem('forceLogin');
+    if (forceLogin) {
+        sessionStorage.removeItem('forceLogin');
+        document.getElementById('loginScreen').classList.remove('hidden');
+        return;
+    }
+
+    try {
+        const s = localStorage.getItem('messUser');
+        if (s) { currentUser = JSON.parse(s); launchApp(); return; }
+    } catch(e) { localStorage.removeItem('messUser'); }
+
+    launchGuestOverview();
+};
+
+
+function showOnlyGuestOverview() {
+    const app = document.getElementById('appContainer');
+    const header = document.getElementById('appHeader');
+    const navBar = document.getElementById('navBar');
+    if (app) app.className = "max-w-md mx-auto bg-white min-h-screen shadow-lg relative flex flex-col";
+    if (header) header.classList.add('hidden');
+    if (navBar) navBar.classList.add('hidden');
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    const homeTab = document.getElementById('tab-home');
+    if (homeTab) {
+        homeTab.classList.add('active');
+        Array.from(homeTab.children).forEach(child => {
+            child.classList.toggle('hidden', child.id !== 'mealOverviewCard');
+        });
+        const backBar = document.getElementById('guestBackLoginBar');
+        if (backBar) backBar.classList.remove('hidden');
+    }
+}
+
+function isBuaUser() {
+    return currentUser && String(currentUser.authority || '').toLowerCase() === 'bua';
+}
+function showOnlyBuaOverview() {
+    const header = document.getElementById('appHeader');
+    const navBar = document.getElementById('navBar');
+    if (header) header.classList.add('hidden');
+    if (navBar) navBar.classList.add('hidden');
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    const homeTab = document.getElementById('tab-home');
+    if (homeTab) {
+        homeTab.classList.add('active');
+        Array.from(homeTab.children).forEach(child => {
+            child.classList.toggle('hidden', !['mealOverviewCard', 'bazarMealPlannerCard', 'guestBackLoginBar'].includes(child.id));
+        });
+        const backBar = document.getElementById('guestBackLoginBar');
+        if (backBar) {
+            backBar.classList.remove('hidden');
+            backBar.querySelector('span.flex').lastChild.textContent = 'Log out';
+        }
+    }
+}
+
+function backToLoginFromGuest() {
+    if (isBuaUser()) localStorage.removeItem('messUser');
+    sessionStorage.setItem('forceLogin', '1');
+    location.reload();
+}
+
+async function launchGuestOverview() {
+    isGuestMode = true;
+    currentUser = { name:'Guest', email:'', authority:'Guest' };
+    localStorage.removeItem('messUser');
+    document.getElementById('loginScreen').classList.add('hidden');
+    document.getElementById('appContainer').classList.remove('hidden');
+    showOnlyGuestOverview();
+    refreshServerClock().catch(() => {}).finally(() => {
+        const sel = document.getElementById('monthFilterSelect');
+        if (sel && sel.options.length === 0) {
+            const o = document.createElement('option');
+            o.value = getCurrentMonthYearString(); o.innerText = getCurrentMonthYearString();
+            sel.appendChild(o);
+        }
+        refreshDataHub();
+    });
+}
+async function handleSecureLogin() {
+    const email = document.getElementById('loginEmail').value.trim();
+    const pass  = document.getElementById('loginPassword').value.trim();
+    const errEl = document.getElementById('loginError');
+    const btn   = document.getElementById('loginBtn');
+    errEl.classList.add('hidden');
+    if (!email || !pass) { errEl.textContent = "⚠️ Both Email and Password are required."; errEl.classList.remove('hidden'); return; }
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+    try {
+        const r = await apiGet({ action:'authenticateUser', email, password:pass });
+        if (r.success) {
+            currentUser = r.user;
+            localStorage.setItem('messUser', JSON.stringify(currentUser));
+            launchApp();
+        } else {
+            errEl.textContent = "❌ " + r.error; errEl.classList.remove('hidden');
+        }
+    } catch(e) {
+        errEl.textContent = "Login failed: " + (e.message || "Cannot reach API. Please check the Vercel deployment.");
+        errEl.classList.remove('hidden');
+    } finally { btn.disabled = false; btn.textContent = "Verify & Access"; }
+}
+
+function launchApp() {
+    document.getElementById('loginScreen').classList.add('hidden');
+    document.getElementById('appContainer').classList.remove('hidden');
+    document.getElementById('userNameDisplay').innerText = currentUser.name.toUpperCase();
+    const navBar   = document.getElementById('navBar');
+    const adminBtn = document.getElementById('navAdminBtn');
+    const duesBtn  = document.getElementById('navDuesBtn');
+    const isAdmin  = currentUser.authority && currentUser.authority.toLowerCase() === "admin";
+    if (isAdmin) {
+        adminBtn.classList.remove('hidden'); duesBtn.classList.remove('hidden');
+        navBar.className = "fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-gray-200 grid grid-cols-5 text-center h-16 items-center z-50";
+    } else {
+        adminBtn.classList.add('hidden'); duesBtn.classList.remove('hidden');
+        navBar.className = "fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-gray-200 grid grid-cols-4 text-center h-16 items-center z-50";
+    }
+    refreshServerClock().catch(() => {}).finally(() => {
+        const sel = document.getElementById('monthFilterSelect');
+        if (sel.options.length === 0) {
+            const o = document.createElement('option');
+            o.value = getCurrentMonthYearString(); o.innerText = getCurrentMonthYearString();
+            sel.appendChild(o);
+        }
+        checkLockoutRestrictions();
+        refreshDataHub();
+    });
+}
+
+function logout() { localStorage.removeItem('messUser'); location.reload(); }
+
+function switchTab(tabId, btn) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-'+tabId).classList.add('active');
+    document.querySelectorAll('.nav-btn').forEach(b => { b.classList.remove('text-blue-600'); b.classList.add('text-gray-500'); });
+    if (btn) { btn.classList.remove('text-gray-500'); btn.classList.add('text-blue-600'); }
+}
+
+// ── Main data refresh ──────────────────────────────────────────────
+async function refreshDataHub() {
+    const selEl = document.getElementById('monthFilterSelect');
+    const selectedMonth = selEl.value || getCurrentMonthYearString();
+    const dml  = document.getElementById('duesMonthLabel');  if (dml)  dml.innerText  = selectedMonth;
+    const dml2 = document.getElementById('duesMonthLabel2'); if (dml2) dml2.innerText = selectedMonth;
+
+    try {
+        const data = await apiGet({
+            action: 'getData',
+            date: getTodayDateString(),
+            monthYear: selectedMonth,
+            email: currentUser.email
+        });
+        if (!data.success) { alert("Database Error:\n" + data.error); return; }
+        applyServerClock(data.serverClock);
+        mealDeadlineExtendedToday = Boolean(data.mealDeadlineExtended);
+        globalBazarSchedule = data.bazarSchedule || { splitBetween:1, periods:[], currentPerson:"", currentPersonMobile:"" };
+
+        // Rebuild month dropdown
+        const sel = document.getElementById('monthFilterSelect');
+        sel.innerHTML = "";
+        (data.monthsList || []).forEach(m => {
+            const o = document.createElement('option');
+            o.value = m; o.innerText = m;
+            if (m === selectedMonth) o.selected = true;
+            sel.appendChild(o);
+        });
+        if (!sel.value) sel.value = getCurrentMonthYearString();
+
+        document.getElementById('totLunch').innerText  = data.lunchTotal;
+        document.getElementById('totDinner').innerText = data.dinnerTotal;
+
+        const fin      = data.financials || {};
+        const mealRate = parseFloat(fin.mealRate)    || 0;
+        const userBal  = parseFloat(fin.userBalance) || 0;
+
+        document.getElementById('ledgerRate').innerText = "৳" + mealRate.toFixed(2);
+        const balEl = document.getElementById('ledgerBalance');
+        balEl.innerText   = (userBal >= 0 ? "+" : "") + "৳" + userBal.toFixed(2);
+        balEl.className   = userBal >= 0 ? "text-emerald-400 text-sm font-bold" : "text-rose-400 text-sm font-bold";
+
+        const rentEl     = document.getElementById('ledgerRent');
+        const rentStatus = fin.rentStatus || 'Due';
+        rentEl.innerText  = rentStatus;
+        rentEl.className  = rentStatus === "Paid" ? "text-emerald-300 text-sm font-bold" : "text-rose-300 text-sm font-bold";
+
+        const roster = document.getElementById('rosterList');
+        roster.innerHTML = "";
+        (data.activeRoster || []).forEach(u => {
+            roster.innerHTML += `<div class="flex justify-between bg-white border p-2 rounded-xl text-xs shadow-xs mb-1"><strong>${u.name}</strong><span class="text-gray-500">${u.details}</span></div>`;
+        });
+
+        globalBazarList = data.bazarList || [];
+        renderCurrentBazarBanner();
+        renderBazarMealPlanner(data.bazarMealPlan || {});
+        if (isGuestMode) { showOnlyGuestOverview(); return; }
+        if (isBuaUser()) { showOnlyBuaOverview(); return; }
+        renderBazarLog();
+
+        globalActiveMembers   = data.membersArray    || [];
+        globalAllMembers      = data.allMembersRaw   || [];
+        globalMonthMembersRaw = data.monthMembersRaw || [];
+        globalHeadCount       = data.headCount       || 1;
+        currentUserActiveForMonth = globalActiveMembers.some(m => m.email && m.email.toLowerCase() === currentUser.email.toLowerCase());
+        updateBazarSubmitState();
+        renderBazarDateSection();
+
+        document.getElementById('utilityActiveMembersLabel').innerText = `${globalHeadCount} Members Active`;
+
+        const uVals = data.utilityCostsRaw || { electricity:0, wifi:0, gas:0, filter:0, bua:0, other:0 };
+        globalUtilityCostsRaw = uVals;
+        document.getElementById('utilDashElec').innerText   = "৳" + uVals.electricity;
+        document.getElementById('utilDashWifi').innerText   = "৳" + uVals.wifi;
+        document.getElementById('utilDashGas').innerText    = "৳" + uVals.gas;
+        document.getElementById('utilDashFilter').innerText = "৳" + uVals.filter;
+        document.getElementById('utilDashBua').innerText    = "৳" + uVals.bua;
+        document.getElementById('utilDashOther').innerText  = "৳" + uVals.other;
+
+        const totalFixed = Object.values(uVals).reduce((a,v) => a+v, 0);
+        document.getElementById('utilDashSplitTotal').innerText = "৳" + (totalFixed / Math.max(1, globalHeadCount)).toFixed(2);
+
+        globalFullMonthMeals     = (data.fullMonthMeals || []).filter(hasAnyMeal);
+        globalNext7Preferences   = data.next7Preferences    || [];
+        globalAdjustmentHistory  = data.adjustmentHistory   || [];
+
+        syncMealFormFromToday(data.userTodayMeal, globalFullMonthMeals);
+        renderNext7Preferences();
+        checkLockoutRestrictions();
+        checkExistingSubmissionForToday(globalFullMonthMeals);
+        populateNameFilterDropdown();
+        applyNameFilter();
+
+        const isAdmin = currentUser.authority && currentUser.authority.toLowerCase() === "admin";
+        renderConsolidatedDuesDropdown();
+        renderAuditHistory();
+        if (isAdmin) {
+            populateAdminOverrideDropdown();
+            populateAdminUtilityFields(uVals);
+            const deadlineToggle = document.getElementById('mealDeadlineToggle');
+            if (deadlineToggle) deadlineToggle.checked = mealDeadlineExtendedToday;
+            renderMemberList();
+            renderCurrentRosterPreview(selectedMonth);
+        }
+
+        optimisticRentState = {};
+        rentTogglePending   = {};
+
+    } catch(e) {
+        alert("⚠️ Failed to load data: " + e.message);
+    }
+}
+
+// ── Bazar Log ──────────────────────────────────────────────────────
+function renderBazarLog() {
+    const container = document.getElementById('bazarLogContainer');
+    const isAdmin   = currentUser && currentUser.authority && currentUser.authority.toLowerCase() === 'admin';
+    if (!globalBazarList.length) {
+        container.innerHTML = '<p class="text-gray-400 text-xs italic">No bazaar transactions recorded for this month.</p>'; return;
+    }
+    container.innerHTML = "";
+    globalBazarList.forEach((b, i) => {
+        const editBtn = isAdmin ? `<button onclick="openBazarEditModal(${i})" class="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-2 py-0.5 rounded-lg ml-2">✏️ Edit</button>` : '';
+        container.innerHTML += `
+        <div class="bg-white p-2.5 rounded-xl border flex justify-between items-center text-xs shadow-xs">
+            <div><strong class="text-slate-800 block">${b.items}</strong><span class="text-[10px] text-gray-400">${b.date} • By ${b.buyer}</span></div>
+            <div class="flex items-center"><strong class="text-indigo-600">৳${b.cost}</strong>${editBtn}</div>
+        </div>`;
+    });
+}
+function openBazarEditModal(idx) {
+    const b = globalBazarList[idx];
+    document.getElementById('bazarEditRowIndex').value = idx;
+    document.getElementById('bazarEditBuyer').innerText = b.buyer;
+    document.getElementById('bazarEditDate').innerText  = b.date;
+    document.getElementById('bazarEditItems').value = b.items;
+    document.getElementById('bazarEditCost').value  = b.cost;
+    document.getElementById('bazarEditModal').classList.remove('hidden');
+}
+function closeBazarModal() { document.getElementById('bazarEditModal').classList.add('hidden'); }
+async function saveBazarEdit() {
+    const btn = document.getElementById('bazarEditSaveBtn');
+    if (btn.disabled) return; btn.disabled = true; btn.innerText = "Saving...";
+    const idx = parseInt(document.getElementById('bazarEditRowIndex').value);
+    const b   = globalBazarList[idx];
+    try {
+        await apiPost({ action:"adminEditBazar", date:b.date, buyerEmail:b.buyerEmail, items:document.getElementById('bazarEditItems').value.trim(), cost:document.getElementById('bazarEditCost').value });
+        closeBazarModal(); refreshDataHub();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { btn.disabled = false; btn.innerText = "Save Changes"; }
+}
+async function deleteBazarEntry() {
+    if (!confirm("Delete this bazar entry?")) return;
+    const btn = document.getElementById('bazarDeleteBtn');
+    if (btn.disabled) return; btn.disabled = true;
+    const idx = parseInt(document.getElementById('bazarEditRowIndex').value);
+    const b   = globalBazarList[idx];
+    try {
+        await apiPost({ action:"adminDeleteBazar", date:b.date, buyerEmail:b.buyerEmail, cost:b.cost });
+        closeBazarModal(); refreshDataHub();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { btn.disabled = false; }
+}
+
+// ── Dues ───────────────────────────────────────────────────────────
+function syncDuesMemberView() {
+    const dd     = document.getElementById('duesMemberDropdown');
+    const card   = document.getElementById('duesDetailsCard');
+    const isAdmin = currentUser && currentUser.authority && currentUser.authority.toLowerCase() === 'admin';
+    const adjBox = document.getElementById('duesAdjustmentBox');
+    if (adjBox) adjBox.classList.toggle('hidden', !isAdmin);
+    const member = globalActiveMembers.find(m => m.email === dd.value);
+    if (!member) { card.classList.add('hidden'); currentDuesMemberData = null; return; }
+    card.classList.remove('hidden');
+
+    // Rent amount label
+    document.getElementById('duesRentAmtLabel').innerText = `৳${(member.rentAmount||0).toLocaleString()} / month`;
+
+    renderRentPill(member);
+
+    const monthDue = getEffectiveMonthDue(member);
+    const overall  = parseFloat(member.overallBalance)   || 0;
+    document.getElementById('duesCardMonthDue').innerText      = (monthDue >= 0 ? "+" : "") + `৳${monthDue.toFixed(2)}`;
+    document.getElementById('duesCardMonthDue').className      = `text-base font-black ${monthDue >= 0 ? 'text-emerald-700' : 'text-rose-600'}`;
+    document.getElementById('duesCardOverallBalance').innerText = (overall >= 0 ? "+" : "") + `৳${overall.toFixed(2)}`;
+    document.getElementById('duesCardOverallBalance').className = `text-base font-black ${overall >= 0 ? 'text-emerald-700' : 'text-rose-600'}`;
+    currentDuesMemberData = member;
+}
+
+function showBalanceInfo(type) {
+    const modal   = document.getElementById('balanceInfoModal');
+    const title   = document.getElementById('balanceInfoTitle');
+    const content = document.getElementById('balanceInfoContent');
+    const net     = document.getElementById('balanceInfoNet');
+    if (!currentDuesMemberData) return;
+    const m             = currentDuesMemberData;
+    const selectedMonth = document.getElementById('monthFilterSelect').value;
+    const mealRate      = parseFloat(document.getElementById('ledgerRate').innerText.replace('৳','')) || 0;
+    const totalFixed    = Object.values(globalUtilityCostsRaw).reduce((a,v) => a+(parseFloat(v)||0), 0);
+    const utilitySplit  = totalFixed / Math.max(1, globalHeadCount);
+
+    if (type === 'month') {
+        title.innerText = `📅 Month Due: ${selectedMonth}`;
+        const mealCount  = m.monthMealCount || 0;
+        const mealCost   = m.monthMealCost  || 0;
+        const rent       = parseFloat(m.rentAmount) || 0;
+        const rentPaidCredit = getRentPaidCredit(m);
+        const adjTotal   = m.monthAdj   || 0;
+        const bazarCredit = m.monthBazar || 0;
+        const monthDue   = getEffectiveMonthDue(m);
+        const rows = [
+            { label: `Meals (${mealCount} × ৳${mealRate.toFixed(2)})`, val: mealCost,      positive: false },
+            { label: 'Room Rent',                                        val: rent,          positive: false },
+            { label: `Utility Share (÷${globalHeadCount})`,             val: utilitySplit,  positive: false },
+            { label: 'Adjustments (this month)',                         val: adjTotal,      sign: true },
+            { label: 'Bazar Contributions (this month)',                 val: bazarCredit,   positive: true },
+        ];
+        if (rentPaidCredit > 0) {
+            rows.splice(2, 0, { label: 'Rent Payment Credit', val: rentPaidCredit, positive: true });
+        }
+        renderInfoRows(content, rows);
+        net.innerText   = (monthDue >= 0 ? "+" : "") + `৳${monthDue.toFixed(2)}`;
+        net.className   = `text-base font-black ${monthDue >= 0 ? 'text-emerald-600' : 'text-rose-600'}`;
+
+    } else {
+        title.innerText = '📊 Lifetime Balance Breakdown';
+        const overall = parseFloat(m.overallBalance) || 0;
+        const lb = m.lifeBreakdown || {};
+        const lifeMealCost      = parseFloat(lb.mealCost)       || 0;
+        const lifeRentCost      = parseFloat(lb.rentCost)       || 0;
+        const lifeUtilCost      = parseFloat(lb.utilCost)       || 0;
+        const lifeRentCredit    = parseFloat(lb.rentPaidCredit) || 0;
+        const lifeAdj           = parseFloat(lb.adjTotal)       || 0;
+        const lifeBazar         = parseFloat(lb.bazarTotal)     || 0;
+        const rows = [
+            { label: 'Total Meal Cost (all months)',      val: lifeMealCost,   positive: false },
+            { label: 'Total Room Rent (all months)',      val: lifeRentCost,   positive: false },
+            { label: 'Total Rent Payment Credit',         val: lifeRentCredit, positive: true  },
+            { label: 'Total Utility Share (all months)',  val: lifeUtilCost,   positive: false },
+            { label: 'Total Adjustments (all months)',    val: lifeAdj,        sign: true },
+            { label: 'Total Bazar Contributions',         val: lifeBazar,      positive: true },
+        ];
+        renderInfoRows(content, rows);
+        net.innerText = (overall >= 0 ? '+' : '') + '৳' + overall.toFixed(2);
+        net.className = `text-base font-black ${overall >= 0 ? 'text-emerald-600' : 'text-rose-600'}`;
+    }
+    modal.classList.remove('hidden');
+}
+
+function renderInfoRows(container, rows) {
+    container.innerHTML = '';
+    rows.forEach(r => {
+        if (r.note) {
+            container.innerHTML += `<div class="py-1 text-[10px] text-slate-500 ${r.sub ? 'pl-2' : 'font-bold text-slate-700'}">${r.sub || r.label}</div>`;
+            return;
+        }
+        let display, colorClass;
+        if (r.sign) {
+            const isPos = r.val >= 0;
+            display    = (isPos ? '+' : '-') + '৳' + Math.abs(r.val).toFixed(2);
+            colorClass = isPos ? 'text-emerald-600' : 'text-rose-500';
+        } else {
+            display    = (r.positive ? '+' : '-') + '৳' + Math.abs(r.val).toFixed(2);
+            colorClass = r.positive ? 'text-emerald-600' : 'text-rose-500';
+        }
+        container.innerHTML += `
+        <div class="flex justify-between items-center py-2 border-b border-dashed border-gray-100 last:border-0">
+            <span class="text-xs text-slate-600">${r.label}</span>
+            <strong class="text-xs font-black ${colorClass}">${display}</strong>
+        </div>`;
+    });
+}
+function closeBalanceInfo() { document.getElementById('balanceInfoModal').classList.add('hidden'); }
+
+// ── Rent ───────────────────────────────────────────────────────────
+function renderRentPill(member) {
+    const container = document.getElementById('duesRentStatusContainer');
+    const isAdmin   = currentUser && currentUser.authority && currentUser.authority.toLowerCase() === 'admin';
+    const status    = optimisticRentState[member.email] !== undefined ? optimisticRentState[member.email] : member.rentStatus;
+    const isPaid    = status === "Paid";
+    const isLoading = rentTogglePending[member.email];
+    const pillClass = isPaid ? 'status-paid' : 'status-due';
+    const label     = isLoading ? '⏳ Saving...' : (isPaid ? '🟢 Paid' : '🔴 Due');
+    container.innerHTML = isAdmin
+        ? `<button onclick="toggleRentStatus('${member.email}','${member.name}')" class="px-3 py-1 rounded-full text-[10px] font-extrabold tracking-wide uppercase ${pillClass} ${isLoading?'opacity-60 pointer-events-none':''}">${label}</button>`
+        : `<span class="px-3 py-1 rounded-full text-[10px] font-extrabold tracking-wide uppercase ${pillClass}">${label}</span>`;
+}
+
+async function toggleRentStatus(email, memberName) {
+    const isAdmin = currentUser && currentUser.authority && currentUser.authority.toLowerCase() === 'admin';
+    if (!isAdmin) return;
+    if (rentTogglePending[email]) return;
+    const member = globalActiveMembers.find(m => m.email === email);
+    if (!member) return;
+    const currentStatus = optimisticRentState[email] !== undefined ? optimisticRentState[email] : member.rentStatus;
+    const newStatus     = currentStatus === "Paid" ? "Due" : "Paid";
+    optimisticRentState[email]  = newStatus;
+    rentTogglePending[email]    = true;
+    renderRentPill({...member, rentStatus: newStatus});
+    const selectedMonth = document.getElementById('monthFilterSelect').value;
+    try {
+        await apiPost({ action:"adminToggleRent", monthYear:selectedMonth, targetEmail:email, targetName:memberName, status:newStatus });
+        rentTogglePending[email] = false;
+        member.rentStatus = newStatus;
+        renderRentPill(member);
+        localStorage.setItem('lastViewedDuesEmail', email);
+        setTimeout(() => refreshDataHub(), 800);
+    } catch(e) {
+        optimisticRentState[email] = currentStatus;
+        rentTogglePending[email]   = false;
+        renderRentPill(member);
+        alert("Failed to update rent status.");
+    }
+}
+
+async function submitDuesCardAdjustment() {
+    const isAdmin = currentUser && currentUser.authority && currentUser.authority.toLowerCase() === 'admin';
+    if (!isAdmin) return;
+    if (adjSavePending) { alert("Please wait, previous save in progress."); return; }
+    const dd       = document.getElementById('duesMemberDropdown');
+    const amtInput = document.getElementById('duesCardAdjAmt');
+    const remInput = document.getElementById('duesCardAdjRemarks');
+    const btn      = document.getElementById('duesAdjSaveBtn');
+    const val      = amtInput.value.trim();
+    if (!val || isNaN(val)) return alert("Provide a valid adjustment number.");
+    adjSavePending = true; btn.disabled = true; btn.innerText = "Saving...";
+    const selectedMonth = document.getElementById('monthFilterSelect').value;
+    const remarks = remInput.value.trim() || `Manual Adjustment (${selectedMonth})`;
+    try {
+        await apiPost({ action:"adminAdjustBalance", targetEmail:dd.value, targetName:dd.options[dd.selectedIndex].text, monthYear:selectedMonth, amount:val, remarks });
+        amtInput.value = ""; remInput.value = "";
+        localStorage.setItem('lastViewedDuesEmail', dd.value);
+        refreshDataHub();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { adjSavePending = false; btn.disabled = false; btn.innerText = "Save"; }
+}
+
+// ── Audit History ──────────────────────────────────────────────────
+function renderAuditHistory() {
+    const filterSel = document.getElementById('auditMemberFilter');
+    const isAdmin = currentUser && currentUser.authority && currentUser.authority.toLowerCase() === 'admin';
+
+    if (filterSel) {
+        filterSel.innerHTML = '';
+
+        if (isAdmin) {
+            const currentFilter = filterSel.value || "ALL";
+            filterSel.innerHTML = '<option value="ALL">All Members</option>';
+            const names = [...new Set(globalAdjustmentHistory.map(r => r.name))].sort();
+            names.forEach(n => {
+                filterSel.innerHTML += `<option value="${n}">${n}</option>`;
+            });
+
+            if ([...filterSel.options].some(o => o.value === currentFilter)) {
+                filterSel.value = currentFilter;
+            } else {
+                filterSel.value = "ALL";
+            }
+
+            filterSel.disabled = false;
+        } else {
+            const ownName = currentUser.name.toUpperCase();
+            filterSel.innerHTML = `<option value="${ownName}">${ownName}</option>`;
+            filterSel.value = ownName;
+            filterSel.disabled = true;
+        }
+    }
+
+    applyAuditFilter();
+}
+function applyAuditFilter() {
+    const isAdmin = currentUser && currentUser.authority && currentUser.authority.toLowerCase() === 'admin';
+    const target = isAdmin
+        ? (document.getElementById('auditMemberFilter') ? document.getElementById('auditMemberFilter').value : "ALL")
+        : currentUser.name.toUpperCase();
+
+    const container = document.getElementById('auditHistoryContainer');
+    if (!container) return;
+
+    const filtered = globalAdjustmentHistory.filter(r => {
+        if (isAdmin) return target === "ALL" || r.name === target;
+        return r.email && r.email.toLowerCase() === currentUser.email.toLowerCase();
+    });
+
+    if (!filtered.length) {
+        container.innerHTML = '<p class="text-gray-400 text-xs italic text-center py-4">No audit records found.</p>';
+        return;
+    }
+
+    container.innerHTML = "";
+    filtered.forEach((r) => {
+        const isPos = r.amount >= 0;
+        const amtClass = isPos ? "text-emerald-600" : "text-rose-500";
+        const pfx = isPos ? "+" : "";
+        const bg = isPos ? "bg-emerald-50 border-emerald-100" : "bg-rose-50 border-rose-100";
+        const globalIdx = globalAdjustmentHistory.indexOf(r);
+        const editBtn = isAdmin ? `<button onclick="openAdjEditModal(${globalIdx})" class="text-[10px] bg-white border font-bold px-2 py-0.5 rounded-lg text-slate-500 hover:bg-slate-50">✏️</button>` : '';
+
+        container.innerHTML += `
+        <div class="flex justify-between items-start p-3 rounded-xl border ${bg} text-xs">
+            <div class="flex-1 min-w-0 mr-2">
+                <strong class="block text-slate-800 truncate">${r.name}</strong>
+                <span class="text-[10px] text-gray-400 block">${r.date}</span>
+                <span class="text-[10px] text-gray-500 block truncate">${r.remarks || 'No remarks'}</span>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+                <strong class="${amtClass}">${pfx}৳${parseFloat(r.amount || 0).toFixed(2)}</strong>
+                ${editBtn}
+            </div>
+        </div>`;
+    });
+}
+function openAdjEditModal(idx) {
+    const r = globalAdjustmentHistory[idx];
+    document.getElementById('adjEditRowIndex').value = idx;
+    document.getElementById('adjEditName').innerText    = r.name;
+    document.getElementById('adjEditAmount').value      = r.amount;
+    document.getElementById('adjEditRemarks').value     = r.remarks || '';
+    document.getElementById('adjEditModal').classList.remove('hidden');
+}
+function closeAdjModal() { document.getElementById('adjEditModal').classList.add('hidden'); }
+async function saveAdjEdit() {
+    const btn = document.getElementById('adjEditSaveBtn');
+    if (btn.disabled) return; btn.disabled = true; btn.innerText = "Saving...";
+    const idx = parseInt(document.getElementById('adjEditRowIndex').value);
+    const r   = globalAdjustmentHistory[idx];
+    try {
+        await apiPost({ action:"adminEditAdjustment", originalDate:r.date, email:r.email, newAmount:document.getElementById('adjEditAmount').value, newRemarks:document.getElementById('adjEditRemarks').value });
+        closeAdjModal(); refreshDataHub();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { btn.disabled = false; btn.innerText = "Save Changes"; }
+}
+async function deleteAdjEntry() {
+    if (!confirm("Delete this adjustment record?")) return;
+    const btn = document.getElementById('adjDeleteBtn');
+    if (btn.disabled) return; btn.disabled = true;
+    const idx = parseInt(document.getElementById('adjEditRowIndex').value);
+    const r   = globalAdjustmentHistory[idx];
+    try {
+        await apiPost({ action:"adminDeleteAdjustment", originalDate:r.date, email:r.email, amount:r.amount });
+        closeAdjModal(); refreshDataHub();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { btn.disabled = false; }
+}
+
+// ── Admin sub-tab switcher (Roster / Directory) ────────────────────
+function switchAdminSubTab(tab) {
+    const isRoster = tab === 'roster';
+    document.getElementById('adminSubRoster').classList.toggle('hidden', !isRoster);
+    document.getElementById('adminSubDirectory').classList.toggle('hidden', isRoster);
+    document.getElementById('rosterDirTab1').className = isRoster
+        ? 'flex-1 text-[11px] py-1.5 rounded-lg font-bold bg-blue-600 text-white'
+        : 'flex-1 text-[11px] py-1.5 rounded-lg font-bold bg-gray-100 text-gray-600';
+    document.getElementById('rosterDirTab2').className = !isRoster
+        ? 'flex-1 text-[11px] py-1.5 rounded-lg font-bold bg-blue-600 text-white'
+        : 'flex-1 text-[11px] py-1.5 rounded-lg font-bold bg-gray-100 text-gray-600';
+}
+
+// ── Member Directory Management ────────────────────────────────────
+function renderMemberList() {
+    const container = document.getElementById('memberListContainer');
+    if (!globalAllMembers.length) { container.innerHTML = '<p class="text-gray-400 text-xs italic text-center py-3">No members found.</p>'; return; }
+    container.innerHTML = "";
+    globalAllMembers.forEach(m => {
+        container.innerHTML += `
+        <div class="bg-white border rounded-xl p-2.5 flex justify-between items-center text-xs">
+            <div>
+                <span class="font-extrabold text-slate-800 block">${m.name}</span>
+                <span class="text-gray-400 text-[10px] block">${m.email}</span>
+                <span class="text-gray-400 text-[10px] block">${m.mobileNumber || 'No mobile'}</span>
+                <span class="text-[9px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-full">${m.authority||'Member'}</span>
+            </div>
+            <button onclick="openMemberModalEdit('${m.email}')" class="text-[10px] bg-amber-50 border border-amber-200 text-amber-700 font-bold px-2 py-1 rounded-lg hover:bg-amber-100">✏️ Edit</button>
+        </div>`;
+    });
+}
+function openMemberModal() {
+    document.getElementById('memberModalTitle').innerText = 'Add New Member';
+    document.getElementById('memberModalEditEmail').value = '';
+    ['memName','memEmail','memPassword','memMobile'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('memAuthority').value = 'Member';
+    document.getElementById('memberModal').classList.remove('hidden');
+}
+function openMemberModalEdit(email) {
+    const m = globalAllMembers.find(x => x.email === email); if (!m) return;
+    document.getElementById('memberModalTitle').innerText     = 'Edit Member';
+    document.getElementById('memberModalEditEmail').value     = email;
+    document.getElementById('memName').value                  = m.name;
+    document.getElementById('memEmail').value                 = m.email;
+    document.getElementById('memPassword').value              = m.password || '';
+    document.getElementById('memMobile').value                = m.mobileNumber || '';
+    document.getElementById('memAuthority').value             = m.authority || 'Member';
+    document.getElementById('memberModal').classList.remove('hidden');
+}
+function closeMemberModal() { document.getElementById('memberModal').classList.add('hidden'); }
+async function saveMember() {
+    const btn = document.getElementById('memberModalSaveBtn');
+    if (btn.disabled) return;
+    const name  = document.getElementById('memName').value.trim();
+    const email = document.getElementById('memEmail').value.trim().toLowerCase();
+    const pass  = document.getElementById('memPassword').value.trim();
+    const mobile = document.getElementById('memMobile').value.trim();
+    if (!name || !email || !pass) { alert("Name, email and password are required."); return; }
+    btn.disabled = true; btn.innerText = "Saving...";
+    const originalEmail = document.getElementById('memberModalEditEmail').value;
+    try {
+        await apiPost({ action:"adminSaveMember", originalEmail, name, email, password:pass, mobileNumber:mobile, authority:document.getElementById('memAuthority').value });
+        closeMemberModal(); refreshDataHub();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { btn.disabled = false; btn.innerText = "Save Member"; }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// ROSTER MANAGEMENT
+// ════════════════════════════════════════════════════════════════════
+
+function renderCurrentRosterPreview(selectedMonth) {
+    const lbl = document.getElementById('rosterMonthLabel');
+    if (lbl) lbl.innerText = `Active Member for ${selectedMonth}`;
+    const container = document.getElementById('currentRosterPreview');
+    if (!container) return;
+    if (!globalMonthMembersRaw.length) {
+        container.innerHTML = '<p class="text-[11px] text-blue-500 italic text-center py-2">No roster approved yet for this month. Click "Manage Roster" to set it up.</p>';
+        return;
+    }
+    container.innerHTML = "";
+    globalMonthMembersRaw.forEach(m => {
+        container.innerHTML += `
+        <div class="bg-white border border-blue-100 rounded-xl p-2.5 flex justify-between items-center text-xs">
+            <div>
+                <span class="font-bold text-slate-800">${m.name}</span>
+                <span class="text-[10px] text-slate-500 ml-1">• Rent: ৳${(m.rentAmount||0).toLocaleString()}</span>
+            </div>
+            <span class="text-[9px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">ACTIVE</span>
+        </div>`;
+    });
+}
+
+async function openRosterModal() {
+    const selectedMonth = document.getElementById('monthFilterSelect').value;
+    document.getElementById('rosterModalMonthLabel').innerText = `Managing: ${selectedMonth}`;
+    document.getElementById('rosterModal').classList.remove('hidden');
+
+    // Populate add-from-directory select
+    const addSel = document.getElementById('rosterAddSelect');
+    addSel.innerHTML = '<option value="">-- Select from directory --</option>';
+    globalAllMembers.forEach(m => {
+        addSel.innerHTML += `<option value="${m.email}">${m.name}</option>`;
+    });
+
+    // Start with existing month roster if any, else load prior month suggestion
+    if (globalMonthMembersRaw.length > 0) {
+        rosterDraft = globalMonthMembersRaw.map(m => ({ email:m.email, name:m.name, rentAmount:m.rentAmount||0 }));
+        document.getElementById('rosterSuggestionBanner').classList.add('hidden');
+    } else {
+        // Fetch prior month suggestion
+        try {
+            const r = await apiGet({ action:'getPriorMonthRoster', monthYear:selectedMonth });
+            if (r.success && r.suggestion.length > 0) {
+                rosterDraft = r.suggestion.map(m => ({ email:m.email, name:m.name, rentAmount:m.rentAmount||0 }));
+                document.getElementById('rosterSuggestionBanner').classList.remove('hidden');
+            } else {
+                rosterDraft = [];
+                document.getElementById('rosterSuggestionBanner').classList.add('hidden');
+            }
+        } catch(e) {
+            rosterDraft = [];
+        }
+    }
+    renderRosterDraft();
+}
+
+function closeRosterModal() {
+    document.getElementById('rosterModal').classList.add('hidden');
+    rosterDraft = [];
+}
+
+function renderRosterDraft() {
+    const container = document.getElementById('rosterEditList');
+    if (!rosterDraft.length) {
+        container.innerHTML = '<p class="text-[11px] text-gray-400 italic text-center py-3">No members in roster yet. Add from directory below.</p>';
+        return;
+    }
+    container.innerHTML = "";
+    rosterDraft.forEach((m, idx) => {
+        container.innerHTML += `
+        <div class="bg-white border rounded-xl p-2.5 flex items-center gap-2 text-xs">
+            <div class="flex-1">
+                <span class="font-bold text-slate-800 block">${m.name}</span>
+                <span class="text-[10px] text-gray-400">${m.email}</span>
+            </div>
+            <div class="flex items-center gap-1">
+                <span class="text-[10px] text-gray-500">Rent ৳</span>
+                <input type="number" value="${m.rentAmount}" onchange="rosterUpdateRent(${idx}, this.value)"
+                    class="w-20 border rounded-lg p-1 text-xs text-center font-bold bg-slate-50">
+            </div>
+            <button onclick="rosterRemoveMember(${idx})" class="text-[10px] bg-rose-50 text-rose-600 border border-rose-200 font-bold px-2 py-1 rounded-lg hover:bg-rose-100">✕</button>
+        </div>`;
+    });
+}
+
+function rosterUpdateRent(idx, val) {
+    rosterDraft[idx].rentAmount = parseFloat(val) || 0;
+}
+
+function rosterRemoveMember(idx) {
+    rosterDraft.splice(idx, 1);
+    renderRosterDraft();
+}
+
+function rosterAddMember() {
+    const sel        = document.getElementById('rosterAddSelect');
+    const rentInput  = document.getElementById('rosterNewRent');
+    const email      = sel.value;
+    const rentAmount = parseFloat(rentInput.value) || 0;
+    if (!email) { alert("Please select a member from directory."); return; }
+    const already = rosterDraft.find(m => m.email === email);
+    if (already) { alert("This member is already in the roster."); return; }
+    const dirMember = globalAllMembers.find(m => m.email === email);
+    if (!dirMember) return;
+    rosterDraft.push({ email, name: dirMember.name, rentAmount });
+    sel.value = "";
+    rentInput.value = "";
+    renderRosterDraft();
+}
+
+async function approveRoster() {
+    if (!confirm(`Approve roster of ${rosterDraft.length} member(s) for ${document.getElementById('monthFilterSelect').value}? This will replace the existing roster for this month.`)) return;
+    const btn = document.getElementById('rosterApproveBtn');
+    btn.disabled = true; btn.innerText = "Saving...";
+    const selectedMonth = document.getElementById('monthFilterSelect').value;
+    try {
+        const r = await apiPost({
+            action: 'approveMonthRoster',
+            monthYear: selectedMonth,
+            members: rosterDraft,
+            approvedBy: currentUser.email,
+        });
+        if (!r.success) throw new Error(r.error);
+        closeRosterModal();
+        refreshDataHub();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { btn.disabled = false; btn.innerText = "✅ Approve & Save Member"; }
+}
+
+// ── Admin helpers ──────────────────────────────────────────────────
+function populateNameFilterDropdown() {
+    const sel = document.getElementById('nameFilterSelect');
+    const cur = sel.value || "ALL";
+    sel.innerHTML = '<option value="ALL">All Members</option>';
+    const names = [...new Set(globalFullMonthMeals.map(m => m.name))].sort();
+    names.forEach(n => { sel.innerHTML += `<option value="${n}">${n}</option>`; });
+    sel.value = [...sel.options].some(o => o.value === cur) ? cur : "ALL";
+
+    const dateSel = document.getElementById('dateFilterSelect');
+    if (dateSel) {
+        const currentDate = dateSel.value || "ALL";
+        dateSel.innerHTML = '<option value="ALL">All Dates</option>';
+        const dates = [...new Set(globalFullMonthMeals.map(m => m.date))].sort((a,b) => b.localeCompare(a));
+        dates.forEach(d => { dateSel.innerHTML += `<option value="${d}">${d.substring(8)}-${d.substring(5,7)}-${d.substring(0,4)}</option>`; });
+        dateSel.value = [...dateSel.options].some(o => o.value === currentDate) ? currentDate : "ALL";
+    }
+}
+function renderMonthMealCell(value, highlight) {
+    const num = parseFloat(value) || 0;
+    if (!highlight) return `<td class="p-2 text-center">${num}</td>`;
+    if (num === 0) return '<td class="p-2 text-center"></td>';
+    let colorClass = 'bg-emerald-100 text-emerald-700 border-emerald-200';
+    if (num === 0.5) colorClass = 'bg-amber-100 text-amber-700 border-amber-200';
+    else if (num > 1) colorClass = 'bg-blue-100 text-blue-700 border-blue-200';
+    return `<td class="p-2 text-center"><span class="inline-flex min-w-[34px] justify-center rounded-lg border px-2 py-1 text-[11px] font-black ${colorClass}">${num}</span></td>`;
+}
+function applyNameFilter() {
+    const target   = document.getElementById('nameFilterSelect').value;
+    const dateTarget = document.getElementById('dateFilterSelect') ? document.getElementById('dateFilterSelect').value : "ALL";
+    const tbody    = document.getElementById('monthTableBody');
+    const tfoot    = document.getElementById('monthTableFoot');
+    const countEl  = document.getElementById('monthLogCount');
+    const highlight = document.getElementById('monthHighlightToggle') ? document.getElementById('monthHighlightToggle').checked : true;
+    const filtered = globalFullMonthMeals.filter(m => (target === "ALL" || m.name === target) && (dateTarget === "ALL" || m.date === dateTarget));
+    const dateBands = {};
+    [...new Set(filtered.map(m => m.date))].sort((a,b) => b.localeCompare(a)).forEach((date, idx) => { dateBands[date] = idx % 2; });
+    tbody.innerHTML = filtered.length ? "" : '<tr><td colspan="6" class="text-center p-4 text-gray-400 italic">No records found.</td></tr>';
+    filtered.forEach(m => {
+        const isGrayBand = dateBands[m.date] === 1;
+        const rowClass = isGrayBand ? "bg-slate-100 hover:bg-slate-200" : "bg-white hover:bg-indigo-50";
+        const dateClass = isGrayBand ? "bg-slate-200 text-slate-700" : "bg-white text-slate-700 border border-slate-200";
+        tbody.innerHTML += `<tr class="${rowClass} transition-colors"><td class="p-2"><span class="inline-flex min-w-[64px] justify-center rounded-lg px-2 py-1 text-[11px] font-black ${dateClass}">${m.date.substring(8)}-${m.date.substring(5,7)}</span></td><td class="p-2 font-bold text-slate-800">${m.name}</td>${renderMonthMealCell(m.lunch, highlight)}${renderMonthMealCell(m.dinner, highlight)}${renderMonthMealCell(m.guestLunch, highlight)}${renderMonthMealCell(m.guestDinner, highlight)}</tr>`;
+    });
+    if (tfoot) {
+        const totL  = filtered.reduce((s,m) => s+(parseFloat(m.lunch)||0), 0);
+        const totD  = filtered.reduce((s,m) => s+(parseFloat(m.dinner)||0), 0);
+        const totGL = filtered.reduce((s,m) => s+(parseFloat(m.guestLunch)||0), 0);
+        const totGD = filtered.reduce((s,m) => s+(parseFloat(m.guestDinner)||0), 0);
+        const totalMeals = totL + totD + totGL + totGD;
+        if (countEl) countEl.innerText = `${totalMeals} total ${totalMeals === 1 ? 'meal' : 'meals'}`;
+        tfoot.innerHTML = filtered.length ? `<tr><td class="p-2 text-[10px] uppercase font-black" colspan="2">Total Meals: ${totalMeals}</td><td class="p-2 text-center font-black">${totL}</td><td class="p-2 text-center font-black">${totD}</td><td class="p-2 text-center font-black text-indigo-700">${totGL}</td><td class="p-2 text-center font-black text-purple-700">${totGD}</td></tr>` : '';
+    }
+}
+function renderConsolidatedDuesDropdown() {
+    const dd = document.getElementById('duesMemberDropdown');
+    const isAdmin = currentUser && currentUser.authority && currentUser.authority.toLowerCase() === 'admin';
+    const visibleMembers = isAdmin
+        ? globalActiveMembers
+        : globalActiveMembers.filter(m => m.email && m.email.toLowerCase() === currentUser.email.toLowerCase());
+    const last = isAdmin ? (localStorage.getItem('lastViewedDuesEmail') || dd.value) : currentUser.email;
+
+    localStorage.removeItem('lastViewedDuesEmail');
+    dd.innerHTML = '<option value="">-- Select Member Name --</option>';
+    visibleMembers.forEach(m => {
+        dd.innerHTML += `<option value="${m.email}">${m.name}</option>`;
+    });
+    dd.value = last;
+
+    if (!dd.value && visibleMembers.length === 1) {
+        dd.value = visibleMembers[0].email;
+    }
+
+    syncDuesMemberView();
+}
+function getRentPaidCredit(member) {
+    const rent = parseFloat(member?.rentAmount) || 0;
+    if (member?.rentPaidCredit !== undefined) return parseFloat(member.rentPaidCredit) || 0;
+    return member?.rentStatus === "Paid" ? rent : 0;
+}
+function getEffectiveMonthDue(member) {
+    const rawMonthDue = parseFloat(member?.monthSpecificDue) || 0;
+    const rentPaidCredit = getRentPaidCredit(member);
+    return member?.rentCreditAppliedToMonthDue ? rawMonthDue : rawMonthDue + rentPaidCredit;
+}
+function populateAdminOverrideDropdown() {
+    const sel = document.getElementById('admMealUser'); if (!sel) return;
+    const cur = sel.value; sel.innerHTML = '';
+    globalActiveMembers.forEach(m => { sel.innerHTML += `<option value="${m.email}">${m.name}</option>`; });
+    if (cur) sel.value = cur;
+}
+function populateAdminUtilityFields(uVals) {
+    const map = { electricity:'utilElec', wifi:'utilWifi', gas:'utilGas', filter:'utilFilter', bua:'utilBua', other:'utilOther' };
+    Object.entries(map).forEach(([k,id]) => { const el = document.getElementById(id); if (el) el.value = uVals[k] || 0; });
+}
+async function adminOverrideMealSubmit() {
+    const sel = document.getElementById('admMealUser');
+    const btn = document.getElementById('admMealBtn');
+    btn.disabled = true; btn.innerText = "Saving...";
+    try {
+        const r = await apiPost({ action:"adminOverrideMeal", targetEmail:sel.value, targetName:sel.options[sel.selectedIndex].text, targetDate:document.getElementById('admMealDate').value, lunch:document.getElementById('admMealLunch').value, dinner:document.getElementById('admMealDinner').value, guestLunch:document.getElementById('admMealGuestLunch').value||0, guestDinner:document.getElementById('admMealGuestDinner').value||0 });
+        if (r?.message) alert(r.message);
+        refreshDataHub();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { btn.disabled = false; btn.innerText = "Fix & Save"; }
+}
+async function adminFixedCostsSubmit() {
+    const btn = document.getElementById('admUtilBtn');
+    btn.disabled = true; btn.innerText = "Saving...";
+    try {
+        await apiPost({ action:"adminSubmitFixedCosts", monthYear:document.getElementById('monthFilterSelect').value, electricity:document.getElementById('utilElec').value||0, wifi:document.getElementById('utilWifi').value||0, gas:document.getElementById('utilGas').value||0, filter:document.getElementById('utilFilter').value||0, bua:document.getElementById('utilBua').value||0, other:document.getElementById('utilOther').value||0 });
+        refreshDataHub();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { btn.disabled = false; btn.innerText = "Save Utilities"; }
+}
+
+// ── Meal & Bazar submit ────────────────────────────────────────────
+async function adminToggleMealDeadlineOverride() {
+    const toggle = document.getElementById('mealDeadlineToggle');
+    if (!toggle) return;
+    toggle.disabled = true;
+    try {
+        const r = await apiPost({ action:"adminSetMealDeadlineOverride", date:getTodayDateString(), enabled:toggle.checked });
+        mealDeadlineExtendedToday = Boolean(r.mealDeadlineExtended);
+        checkLockoutRestrictions();
+        refreshDataHub();
+    } catch(e) {
+        toggle.checked = !toggle.checked;
+        alert("Error: " + e.message);
+    } finally {
+        toggle.disabled = false;
+    }
+}
+async function adminSaveBazarSplit() {
+    const input = document.getElementById('bazarSplitInput');
+    const btn = document.getElementById('bazarSplitSaveBtn');
+    const selectedMonth = document.getElementById('monthFilterSelect').value || getCurrentMonthYearString();
+    const splitBetween = parseInt(input.value, 10);
+    if (!splitBetween || splitBetween < 1) { alert("Please enter a valid split number."); return; }
+    if (!confirm("Changing split will reset selected bazar periods for this month. Continue?")) return;
+    btn.disabled = true; btn.innerText = "Saving...";
+    try {
+        await apiPost({ action:"adminSaveBazarSplit", monthYear:selectedMonth, splitBetween });
+        refreshDataHub();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { btn.disabled = false; btn.innerText = "Save"; }
+}
+async function claimBazarPeriod(startDay, endDay) {
+    if (!currentUserActiveForMonth) { alert("You are not an active member for this month. Contact admin."); return; }
+    const selectedMonth = document.getElementById('monthFilterSelect').value || getCurrentMonthYearString();
+    try {
+        const r = await apiPost({ action:"claimBazarPeriod", monthYear:selectedMonth, startDay, endDay, email:currentUser.email, name:currentUser.name });
+        if (r && !r.success) { alert(r.error || "Could not select this period."); return; }
+        refreshDataHub();
+    } catch(e) { alert("Error: " + e.message); }
+}
+async function submitMeals() {
+    const btn = document.getElementById('submitMealBtn');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Saving...';
+    try {
+        const r = await apiPost({ action:"submitMeal", date:getTodayDateString(), email:currentUser.email, name:currentUser.name, lunch:document.getElementById('lunchInput').value, dinner:document.getElementById('dinnerInput').value, guestLunch:document.getElementById('guestLunchInput').value||0, guestDinner:document.getElementById('guestDinnerInput').value||0 });
+        if (r?.message) alert(r.message);
+        if (r && !r.success) { alert("⚠️ " + r.error); return; }
+        refreshDataHub();
+    } catch(e) { alert("Error saving meal: " + e.message); }
+    finally { btn.disabled = false; btn.textContent = "Save Selection"; checkLockoutRestrictions(); }
+}
+async function submitNext7Preferences() {
+    const btn = document.getElementById('next7PreferenceBtn');
+    const preferences = collectNext7Preferences();
+    if (!preferences.length) { setNext7PreferenceNotice('No days found to save.', 'error'); return; }
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Saving...';
+    setNext7PreferenceNotice('', 'info');
+    try {
+        const r = await apiPost({ action:"submitMealPreferences", email:currentUser.email, name:currentUser.name, preferences });
+        if (r && !r.success) { setNext7PreferenceNotice(r.error || 'Could not save preferences.', 'error'); return; }
+        const skipped = (r.skippedDates || []).length ? ` Some dates were skipped: ${r.skippedDates.join(', ')}` : '';
+        const removed = r.removedCount ? ` Removed ${r.removedCount} empty day${r.removedCount === 1 ? '' : 's'}.` : '';
+        setNext7PreferenceNotice(`Saved ${r.savedCount || 0} future meal preference${(r.savedCount || 0) === 1 ? '' : 's'}.${removed}${skipped}`, 'info');
+        if (r?.message) alert(r.message);
+        refreshDataHub();
+    } catch(e) { setNext7PreferenceNotice("Error saving preferences: " + e.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = "Save Next 7 Days"; }
+}
+async function submitBazar() {
+    const items = document.getElementById('bazarItems').value.trim();
+    const cost  = document.getElementById('bazarCost').value.trim();
+    const btn   = document.getElementById('bazarBtn');
+    if (!currentUserActiveForMonth) { alert("You are not an active member for this month. Contact admin."); return; }
+    if (!items || !cost) { alert("Please complete both fields!"); return; }
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+    try {
+        await apiPost({ action:"submitBazar", date:getTodayDateString(), email:currentUser.email, name:currentUser.name, items, cost });
+        document.getElementById('bazarItems').value = "";
+        document.getElementById('bazarCost').value  = "";
+        refreshDataHub();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { btn.disabled = false; btn.textContent = "Submit"; }
+}
+</script>
+</body>
+</html>
