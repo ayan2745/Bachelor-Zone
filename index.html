@@ -273,7 +273,16 @@
                 </div>
             </div>
             <div class="bg-gray-50 rounded-2xl p-4 border">
-                <h4 class="font-bold text-gray-700 text-sm mb-2">Bazar Log for Selected Month</h4>
+                <div class="flex items-center justify-between gap-2 mb-2">
+                    <h4 class="font-bold text-gray-700 text-sm">Bazar Log for Selected Month</h4>
+                    <span id="bazarLogCount" class="text-[10px] bg-slate-100 text-slate-500 font-black px-2 py-1 rounded-full">0 entries</span>
+                </div>
+                <div class="mb-2">
+                    <label class="block text-[11px] font-bold uppercase text-gray-400 mb-1">Filter by Member</label>
+                    <select id="bazarNameFilterSelect" onchange="applyBazarNameFilter()" class="w-full bg-white border rounded-lg p-2 text-sm font-semibold text-slate-700 focus:outline-none">
+                        <option value="ALL">All Members</option>
+                    </select>
+                </div>
                 <div id="bazarLogContainer" class="space-y-2 max-h-64 overflow-y-auto"></div>
             </div>
         </div>
@@ -646,6 +655,7 @@ let globalNotifications  = [];
 let notifUnreadCount     = 0;
 let notifPollTimer       = null;
 let notifPanelOpen       = false;
+let liveDataPollTimer    = null;
 
 // Roster modal state
 let rosterDraft = [];  // [{ email, name, rentAmount }]
@@ -1210,6 +1220,7 @@ async function launchGuestOverview() {
             sel.appendChild(o);
         }
         refreshDataHub();
+        startLiveDataPolling();
     });
 }
 async function handleSecureLogin() {
@@ -1260,10 +1271,11 @@ function launchApp() {
         checkLockoutRestrictions();
         refreshDataHub();
         startNotificationPolling();
+        startLiveDataPolling();
     });
 }
 
-function logout() { stopNotificationPolling(); localStorage.removeItem('messUser'); location.reload(); }
+function logout() { stopNotificationPolling(); stopLiveDataPolling(); localStorage.removeItem('messUser'); location.reload(); }
 
 function switchTab(tabId, btn) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -1330,6 +1342,7 @@ async function refreshDataHub() {
         renderBazarMealPlanner(data.bazarMealPlan || {});
         if (isGuestMode) { showOnlyGuestOverview(); return; }
         if (isBuaUser()) { showOnlyBuaOverview(); return; }
+        populateBazarNameFilterDropdown();
         renderBazarLog();
 
         globalActiveMembers   = data.membersArray    || [];
@@ -1386,14 +1399,39 @@ async function refreshDataHub() {
 }
 
 // ── Bazar Log ──────────────────────────────────────────────────────
+let bazarLogView = [];   // currently displayed (filtered + sorted) slice of globalBazarList
+function populateBazarNameFilterDropdown() {
+    const sel = document.getElementById('bazarNameFilterSelect');
+    if (!sel) return;
+    const cur = sel.value || "ALL";
+    sel.innerHTML = '<option value="ALL">All Members</option>';
+    const names = [...new Set(globalBazarList.map(b => b.buyer))].sort();
+    names.forEach(n => { sel.innerHTML += `<option value="${n}">${n}</option>`; });
+    sel.value = [...sel.options].some(o => o.value === cur) ? cur : "ALL";
+}
+function applyBazarNameFilter() { renderBazarLog(); }
 function renderBazarLog() {
     const container = document.getElementById('bazarLogContainer');
+    const countEl   = document.getElementById('bazarLogCount');
     const isAdmin   = currentUser && currentUser.authority && currentUser.authority.toLowerCase() === 'admin';
-    if (!globalBazarList.length) {
+    const filterSel = document.getElementById('bazarNameFilterSelect');
+    const target    = filterSel ? filterSel.value : "ALL";
+
+    // Newest first: sort by date descending. Array.prototype.sort is a stable
+    // sort in modern JS engines, so same-day entries keep their existing
+    // relative order (the API already returns same-day entries most-recent-first).
+    bazarLogView = globalBazarList
+        .filter(b => target === "ALL" || b.buyer === target)
+        .slice()
+        .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+    if (countEl) countEl.innerText = `${bazarLogView.length} ${bazarLogView.length === 1 ? 'entry' : 'entries'}`;
+
+    if (!bazarLogView.length) {
         container.innerHTML = '<p class="text-gray-400 text-xs italic">No bazaar transactions recorded for this month.</p>'; return;
     }
     container.innerHTML = "";
-    globalBazarList.forEach((b, i) => {
+    bazarLogView.forEach((b, i) => {
         const editBtn = isAdmin ? `<button onclick="openBazarEditModal(${i})" class="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-2 py-0.5 rounded-lg ml-2">✏️ Edit</button>` : '';
         container.innerHTML += `
         <div class="bg-white p-2.5 rounded-xl border flex justify-between items-center text-xs shadow-xs">
@@ -1403,7 +1441,7 @@ function renderBazarLog() {
     });
 }
 function openBazarEditModal(idx) {
-    const b = globalBazarList[idx];
+    const b = bazarLogView[idx];
     document.getElementById('bazarEditRowIndex').value = idx;
     document.getElementById('bazarEditBuyer').innerText = b.buyer;
     document.getElementById('bazarEditDate').innerText  = b.date;
@@ -1416,7 +1454,7 @@ async function saveBazarEdit() {
     const btn = document.getElementById('bazarEditSaveBtn');
     if (btn.disabled) return; btn.disabled = true; btn.innerText = "Saving...";
     const idx = parseInt(document.getElementById('bazarEditRowIndex').value);
-    const b   = globalBazarList[idx];
+    const b   = bazarLogView[idx];
     try {
         await apiPost({ action:"adminEditBazar", date:b.date, buyerEmail:b.buyerEmail, items:document.getElementById('bazarEditItems').value.trim(), cost:document.getElementById('bazarEditCost').value });
         closeBazarModal(); refreshDataHub();
@@ -1428,7 +1466,7 @@ async function deleteBazarEntry() {
     const btn = document.getElementById('bazarDeleteBtn');
     if (btn.disabled) return; btn.disabled = true;
     const idx = parseInt(document.getElementById('bazarEditRowIndex').value);
-    const b   = globalBazarList[idx];
+    const b   = bazarLogView[idx];
     try {
         await apiPost({ action:"adminDeleteBazar", date:b.date, buyerEmail:b.buyerEmail, cost:b.cost });
         closeBazarModal(); refreshDataHub();
@@ -2167,6 +2205,49 @@ function startNotificationPolling() {
 function stopNotificationPolling() {
     if (notifPollTimer) { clearInterval(notifPollTimer); notifPollTimer = null; }
 }
+
+// ── Live data polling (keeps everyone's view in sync without reloading) ─────
+function isAnyModalOpen() {
+    return ['bazarEditModal','adjEditModal','memberModal','rosterModal','balanceInfoModal']
+        .some(id => {
+            const el = document.getElementById(id);
+            return el && !el.classList.contains('hidden');
+        });
+}
+// True while the user has a text field focused — refreshDataHub() force-overwrites
+// several plain (non-modal) input values (admin utility costs, bazar split, meal
+// override fields, etc.) with server data, which would wipe an in-progress edit.
+function isEditingActiveInput() {
+    const el = document.activeElement;
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    if (el.tagName === 'TEXTAREA') return true;
+    if (el.tagName === 'INPUT') {
+        const textTypes = ['text','number','tel','email','search','password','url'];
+        return textTypes.includes((el.type || 'text').toLowerCase());
+    }
+    return false;
+}
+function shouldSkipLiveRefresh() {
+    return document.hidden || isAnyModalOpen() || isEditingActiveInput();
+}
+function startLiveDataPolling() {
+    if (liveDataPollTimer) return;
+    liveDataPollTimer = setInterval(() => {
+        if (shouldSkipLiveRefresh()) return;
+        refreshDataHub();
+    }, 10000);
+}
+function stopLiveDataPolling() {
+    if (liveDataPollTimer) { clearInterval(liveDataPollTimer); liveDataPollTimer = null; }
+}
+document.addEventListener('visibilitychange', () => {
+    // The moment the app comes back to the foreground, catch up immediately
+    // instead of waiting up to 10s for the next tick.
+    if (!document.hidden && currentUser && liveDataPollTimer && !isAnyModalOpen() && !isEditingActiveInput()) {
+        refreshDataHub();
+    }
+});
 function openNotificationPanel() {
     if (!notificationsEnabledForUser()) return;
     notifPanelOpen = true;
