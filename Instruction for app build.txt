@@ -1,0 +1,6 @@
+Open CMD
+1. Run npm install
+2. Run winget install Microsoft.OpenJDK.21 (if java is not installed)
+3. Run npm run android:debug
+
+Android Version is ready
