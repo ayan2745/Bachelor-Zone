@@ -343,7 +343,11 @@
                     <h4 class="text-xs font-bold text-emerald-900 uppercase">💰 Member Balance Summary</h4>
                     <span id="balanceSummaryMonthLabel" class="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-2 py-1 rounded"></span>
                 </div>
-                <p class="text-[10px] text-emerald-700 -mt-2">Tap a member to load their full breakdown below.</p>
+                <div class="flex gap-1.5">
+                    <button id="balanceSummaryTab1" onclick="switchBalanceSummaryScope('running')" class="flex-1 text-[11px] py-1.5 rounded-lg font-bold bg-emerald-600 text-white">📋 Running Members</button>
+                    <button id="balanceSummaryTab2" onclick="switchBalanceSummaryScope('all')" class="flex-1 text-[11px] py-1.5 rounded-lg font-bold bg-white text-emerald-700 border border-emerald-200">👥 All Members</button>
+                </div>
+                <p class="text-[10px] text-emerald-700">Tap a member to load their full breakdown below.</p>
                 <div id="memberBalanceSummaryContainer" class="space-y-1.5 max-h-72 overflow-y-auto"></div>
                 <div id="memberBalanceSummaryTotals" class="border-t border-emerald-200 pt-2 flex justify-between text-xs"></div>
             </div>
@@ -1493,7 +1497,9 @@ function syncDuesMemberView() {
     const isAdmin = currentUser && currentUser.authority && currentUser.authority.toLowerCase() === 'admin';
     const adjBox = document.getElementById('duesAdjustmentBox');
     if (adjBox) adjBox.classList.toggle('hidden', !isAdmin);
-    const member = globalActiveMembers.find(m => m.email === dd.value);
+    const member = isAdmin
+        ? globalAllMembers.find(m => m.email === dd.value)
+        : globalActiveMembers.find(m => m.email === dd.value);
     if (!member) { card.classList.add('hidden'); currentDuesMemberData = null; return; }
     card.classList.remove('hidden');
 
@@ -2025,7 +2031,7 @@ function renderConsolidatedDuesDropdown() {
     const dd = document.getElementById('duesMemberDropdown');
     const isAdmin = currentUser && currentUser.authority && currentUser.authority.toLowerCase() === 'admin';
     const visibleMembers = isAdmin
-        ? globalActiveMembers
+        ? globalAllMembers
         : globalActiveMembers.filter(m => m.email && m.email.toLowerCase() === currentUser.email.toLowerCase());
     const last = isAdmin ? (localStorage.getItem('lastViewedDuesEmail') || dd.value) : currentUser.email;
 
@@ -2053,6 +2059,18 @@ function getEffectiveMonthDue(member) {
     return member?.rentCreditAppliedToMonthDue ? rawMonthDue : rawMonthDue + rentPaidCredit;
 }
 // ── Member Balance Summary (Admin Panel overview) ────────────────────
+let balanceSummaryScope = 'running'; // 'running' = active this month, 'all' = full directory
+
+function switchBalanceSummaryScope(scope) {
+    balanceSummaryScope = scope;
+    const tab1 = document.getElementById('balanceSummaryTab1');
+    const tab2 = document.getElementById('balanceSummaryTab2');
+    const isRunning = scope === 'running';
+    if (tab1) tab1.className = `flex-1 text-[11px] py-1.5 rounded-lg font-bold ${isRunning ? 'bg-emerald-600 text-white' : 'bg-white text-emerald-700 border border-emerald-200'}`;
+    if (tab2) tab2.className = `flex-1 text-[11px] py-1.5 rounded-lg font-bold ${!isRunning ? 'bg-emerald-600 text-white' : 'bg-white text-emerald-700 border border-emerald-200'}`;
+    renderMemberBalanceSummary();
+}
+
 function renderMemberBalanceSummary(selectedMonth) {
     const card      = document.getElementById('memberBalanceSummaryCard');
     const container = document.getElementById('memberBalanceSummaryContainer');
@@ -2064,9 +2082,19 @@ function renderMemberBalanceSummary(selectedMonth) {
     if (!isAdmin) return;
     if (labelEl) labelEl.innerText = selectedMonth || document.getElementById('monthFilterSelect').value || '';
 
-    const members = [...globalActiveMembers];
+    const isRunning = balanceSummaryScope === 'running';
+    // Balance summary only applies to paying members (Admin / Member) — Bua is
+    // household staff and never carries a meal/rent/bazar balance.
+    const authorityByEmail = {};
+    globalAllMembers.forEach(m => { authorityByEmail[m.email] = String(m.authority || 'Member').toLowerCase(); });
+    const isBalanceEligible = m => {
+        const role = String(m.authority || authorityByEmail[m.email] || 'Member').toLowerCase();
+        return role === 'admin' || role === 'member';
+    };
+    const members = (isRunning ? [...globalActiveMembers] : [...globalAllMembers]).filter(isBalanceEligible);
+
     if (!members.length) {
-        container.innerHTML = '<p class="text-gray-400 text-xs italic text-center py-3">No active members this month.</p>';
+        container.innerHTML = `<p class="text-gray-400 text-xs italic text-center py-3">No ${isRunning ? 'active' : ''} members found.</p>`;
         if (totalsEl) totalsEl.innerHTML = '';
         return;
     }
@@ -2076,19 +2104,22 @@ function renderMemberBalanceSummary(selectedMonth) {
     const rows = members.map(m => ({
         member:   m,
         monthDue: getEffectiveMonthDue(m),
-        overall:  parseFloat(m.overallBalance) || 0
+        overall:  parseFloat(m.overallBalance) || 0,
+        isActiveThisMonth: isRunning ? true : (m.isActiveThisMonth !== false)
     })).sort((a, b) => a.overall - b.overall);
 
     container.innerHTML = rows.map(r => {
         const m = r.member;
         const monthCls   = r.monthDue >= 0 ? 'text-emerald-700' : 'text-rose-600';
         const overallCls = r.overall  >= 0 ? 'text-emerald-700' : 'text-rose-600';
-        const rentPaid   = (m.rentStatus === 'Paid');
+        const statusLine = r.isActiveThisMonth
+            ? `${m.rentStatus === 'Paid' ? '🟢 Rent Paid' : '🔴 Rent Due'} · Month Due: <span class="${monthCls} font-bold">${r.monthDue >= 0 ? '+' : ''}৳${r.monthDue.toFixed(2)}</span>`
+            : `⚪ Not running this month`;
         return `
         <button onclick="openMemberFromBalanceSummary('${m.email}')" class="w-full flex items-center justify-between bg-white border border-emerald-100 rounded-xl px-3 py-2 text-left hover:bg-emerald-50 transition-colors">
             <span class="flex flex-col">
                 <strong class="text-xs text-slate-800">${m.name}</strong>
-                <span class="text-[10px] text-gray-400">${rentPaid ? '🟢 Rent Paid' : '🔴 Rent Due'} · Month Due: <span class="${monthCls} font-bold">${r.monthDue >= 0 ? '+' : ''}৳${r.monthDue.toFixed(2)}</span></span>
+                <span class="text-[10px] text-gray-400">${statusLine}</span>
             </span>
             <span class="flex flex-col items-end">
                 <span class="text-[9px] text-gray-400 uppercase font-bold">Lifetime Balance</span>
@@ -2098,10 +2129,9 @@ function renderMemberBalanceSummary(selectedMonth) {
     }).join('');
 
     if (totalsEl) {
-        const totalMonthDue = rows.reduce((s, r) => s + r.monthDue, 0);
-        const totalOverall  = rows.reduce((s, r) => s + r.overall, 0);
+        const totalOverall = rows.reduce((s, r) => s + r.overall, 0);
         totalsEl.innerHTML = `
-            <span class="text-slate-500 font-bold uppercase">Group Total</span>
+            <span class="text-slate-500 font-bold uppercase">Group Total (${isRunning ? 'Running' : 'All'})</span>
             <span class="font-black ${totalOverall >= 0 ? 'text-emerald-700' : 'text-rose-600'}">${totalOverall >= 0 ? '+' : ''}৳${totalOverall.toFixed(2)}</span>`;
     }
 }
