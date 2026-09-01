@@ -502,12 +502,44 @@ export default async function handler(req, res) {
         date: r.adjustment_date, amount: r.amount, remarks: r.remarks,
       })).reverse();
 
-      // ── allMembersRaw (directory — no status/rent, those live in monthly_members) ──
-      const allMembersRaw = allMemberDir.map(m => ({
-        name: m.name,
-        email: m.email,
-        authority: m.authority,
-        mobileNumber: m.mobile_number || "",
+      // ── allMembersRaw (full directory, enriched with lifetime balance so admins ──
+      // ── can view ALL members at once, not just those active this month) ──────
+      const allMembersRaw = await Promise.all(allMemberDir.map(async m => {
+        const email = String(m.email || "").toLowerCase().trim();
+        const activeMatch = membersArray.find(am => am.email === email);
+        if (activeMatch) {
+          return {
+            name: m.name,
+            email,
+            authority: m.authority,
+            mobileNumber: m.mobile_number || "",
+            isActiveThisMonth: true,
+            rentStatus: activeMatch.rentStatus,
+            rentAmount: activeMatch.rentAmount,
+            rentPaidCredit: activeMatch.rentPaidCredit,
+            rentCreditAppliedToMonthDue: activeMatch.rentCreditAppliedToMonthDue,
+            monthSpecificDue: activeMatch.monthSpecificDue,
+            overallBalance: activeMatch.overallBalance,
+            lifeBreakdown: activeMatch.lifeBreakdown,
+          };
+        }
+        // Not on this month's roster — still fetch lifetime balance so their
+        // running total can be shown in the "All Members" balance view.
+        const lifeBreakdown = await calcLifetimeBalance(email);
+        return {
+          name: m.name,
+          email,
+          authority: m.authority,
+          mobileNumber: m.mobile_number || "",
+          isActiveThisMonth: false,
+          rentStatus: null,
+          rentAmount: 0,
+          rentPaidCredit: 0,
+          rentCreditAppliedToMonthDue: true,
+          monthSpecificDue: 0,
+          overallBalance: lifeBreakdown.net,
+          lifeBreakdown,
+        };
       }));
 
       return sendJson(res, {
