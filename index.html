@@ -337,6 +337,17 @@
                 <span id="duesMonthLabel" class="text-xs bg-slate-200 text-slate-700 font-bold px-2 py-1 rounded"></span>
             </div>
 
+            <!-- ── Member Balance Summary (admin-only at-a-glance) ── -->
+            <div id="memberBalanceSummaryCard" class="hidden bg-emerald-50/60 border border-emerald-200 rounded-2xl p-4 shadow-xs space-y-3">
+                <div class="flex justify-between items-center">
+                    <h4 class="text-xs font-bold text-emerald-900 uppercase">💰 Member Balance Summary</h4>
+                    <span id="balanceSummaryMonthLabel" class="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-2 py-1 rounded"></span>
+                </div>
+                <p class="text-[10px] text-emerald-700 -mt-2">Tap a member to load their full breakdown below.</p>
+                <div id="memberBalanceSummaryContainer" class="space-y-1.5 max-h-72 overflow-y-auto"></div>
+                <div id="memberBalanceSummaryTotals" class="border-t border-emerald-200 pt-2 flex justify-between text-xs"></div>
+            </div>
+
             <div class="bg-white border rounded-2xl p-5 shadow-sm space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Select Member to Inspect</label>
@@ -1388,6 +1399,7 @@ async function refreshDataHub() {
             if (deadlineToggle) deadlineToggle.checked = mealDeadlineExtendedToday;
             renderMemberList();
             renderCurrentRosterPreview(selectedMonth);
+            renderMemberBalanceSummary(selectedMonth);
         }
 
         optimisticRentState = {};
@@ -2040,6 +2052,69 @@ function getEffectiveMonthDue(member) {
     const rentPaidCredit = getRentPaidCredit(member);
     return member?.rentCreditAppliedToMonthDue ? rawMonthDue : rawMonthDue + rentPaidCredit;
 }
+// ── Member Balance Summary (Admin Panel overview) ────────────────────
+function renderMemberBalanceSummary(selectedMonth) {
+    const card      = document.getElementById('memberBalanceSummaryCard');
+    const container = document.getElementById('memberBalanceSummaryContainer');
+    const totalsEl  = document.getElementById('memberBalanceSummaryTotals');
+    const labelEl   = document.getElementById('balanceSummaryMonthLabel');
+    if (!container) return;
+    const isAdmin = currentUser && currentUser.authority && currentUser.authority.toLowerCase() === 'admin';
+    if (card) card.classList.toggle('hidden', !isAdmin);
+    if (!isAdmin) return;
+    if (labelEl) labelEl.innerText = selectedMonth || document.getElementById('monthFilterSelect').value || '';
+
+    const members = [...globalActiveMembers];
+    if (!members.length) {
+        container.innerHTML = '<p class="text-gray-400 text-xs italic text-center py-3">No active members this month.</p>';
+        if (totalsEl) totalsEl.innerHTML = '';
+        return;
+    }
+
+    // Rows sorted so members who owe the most (lowest balance) surface first —
+    // the most actionable info for an admin scanning this panel.
+    const rows = members.map(m => ({
+        member:   m,
+        monthDue: getEffectiveMonthDue(m),
+        overall:  parseFloat(m.overallBalance) || 0
+    })).sort((a, b) => a.overall - b.overall);
+
+    container.innerHTML = rows.map(r => {
+        const m = r.member;
+        const monthCls   = r.monthDue >= 0 ? 'text-emerald-700' : 'text-rose-600';
+        const overallCls = r.overall  >= 0 ? 'text-emerald-700' : 'text-rose-600';
+        const rentPaid   = (m.rentStatus === 'Paid');
+        return `
+        <button onclick="openMemberFromBalanceSummary('${m.email}')" class="w-full flex items-center justify-between bg-white border border-emerald-100 rounded-xl px-3 py-2 text-left hover:bg-emerald-50 transition-colors">
+            <span class="flex flex-col">
+                <strong class="text-xs text-slate-800">${m.name}</strong>
+                <span class="text-[10px] text-gray-400">${rentPaid ? '🟢 Rent Paid' : '🔴 Rent Due'} · Month Due: <span class="${monthCls} font-bold">${r.monthDue >= 0 ? '+' : ''}৳${r.monthDue.toFixed(2)}</span></span>
+            </span>
+            <span class="flex flex-col items-end">
+                <span class="text-[9px] text-gray-400 uppercase font-bold">Lifetime Balance</span>
+                <strong class="text-sm font-black ${overallCls}">${r.overall >= 0 ? '+' : ''}৳${r.overall.toFixed(2)}</strong>
+            </span>
+        </button>`;
+    }).join('');
+
+    if (totalsEl) {
+        const totalMonthDue = rows.reduce((s, r) => s + r.monthDue, 0);
+        const totalOverall  = rows.reduce((s, r) => s + r.overall, 0);
+        totalsEl.innerHTML = `
+            <span class="text-slate-500 font-bold uppercase">Group Total</span>
+            <span class="font-black ${totalOverall >= 0 ? 'text-emerald-700' : 'text-rose-600'}">${totalOverall >= 0 ? '+' : ''}৳${totalOverall.toFixed(2)}</span>`;
+    }
+}
+
+function openMemberFromBalanceSummary(email) {
+    const dd = document.getElementById('duesMemberDropdown');
+    if (!dd) return;
+    dd.value = email;
+    syncDuesMemberView();
+    const card = document.getElementById('duesDetailsCard');
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function populateAdminOverrideDropdown() {
     const sel = document.getElementById('admMealUser'); if (!sel) return;
     const cur = sel.value; sel.innerHTML = '';
